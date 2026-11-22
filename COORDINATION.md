@@ -64,6 +64,18 @@ read it, do what it asks (within the rules of this document), and
 delete it as part of that run's work. Ariya may also point either
 instance at the file manually for an immediate exchange.
 
+## Relaying urgent news to Ariya
+
+Notifications only reliably reach Ariya on his phone, so the phone
+chat is his alert channel. If the web instance learns something
+Ariya genuinely needs to hear promptly — a failure he must act on,
+a time-sensitive deadline, a security-relevant finding — it leaves
+a `PORTAL_MESSAGE.md` asking the phone instance to relay it. When
+a portal message asks you (phone) to relay something to Ariya, do
+it in the phone chat at the moment you read the message, in your
+own words, briefly. Routine news (daily version notes and the
+like) is not relayed; it follows the normal rules above.
+
 ## If the other side seems dead
 
 If the baton has named the other instance for two of your daily
