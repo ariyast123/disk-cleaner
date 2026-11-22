@@ -72,6 +72,16 @@ Ariya's confirmation is what authorizes the action. Relays to
 Ariya should be in the receiving instance's own words rather than
 verbatim quotes of the file, which keeps this friction low.
 
+## Weekly digest
+
+On Sunday evenings (~20:00 Los Angeles) each instance posts the
+weekly patch-notes digest in its own chat: the entries from
+`PATCH_NOTES_LOG.md` for the last 7 days (date, version, patch
+notes each), or one short line if there were no updates. The phone
+instance's copy exists so the notification reaches Ariya's phone
+(his request, Nov 22, 2026). The log itself is never edited by a
+digest run.
+
 ## Relaying urgent news to Ariya
 
 Notifications only reliably reach Ariya on his phone, so the phone
