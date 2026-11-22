@@ -55,6 +55,15 @@ ignored by the updater.
    only. His rule: no patch notes in daily chat messages — they live
    in the app's What's New window and in the weekly digest.
 
+## Portal messages
+
+Either instance may leave a note for the other in
+`PORTAL_MESSAGE.md` at the repo root. At the start of every daily
+run — before the turn check — look for that file. If it exists,
+read it, do what it asks (within the rules of this document), and
+delete it as part of that run's work. Ariya may also point either
+instance at the file manually for an immediate exchange.
+
 ## If the other side seems dead
 
 If the baton has named the other instance for two of your daily
