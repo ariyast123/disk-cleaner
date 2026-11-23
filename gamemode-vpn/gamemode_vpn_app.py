@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.9"
+VERSION = "1.3.0"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -270,6 +270,7 @@ class GameModeApp(ctk.CTk):
         self._build_main()
         self._rebuild_game_rows()
         self._refresh_proton_path()
+        self._refresh_history()
         self._log("GameMode VPN started — watching for games")
 
         self.update_info = None
@@ -473,10 +474,23 @@ class GameModeApp(ctk.CTk):
                       font=ctk.CTkFont("Segoe UI", 11),
                       command=self._browse_proton).pack(side="left")
 
+        # Session history card
+        history_card = ctk.CTkFrame(main, fg_color=PANEL, corner_radius=16,
+                                    border_width=1, border_color=PANEL_EDGE)
+        history_card.grid(row=4, column=0, sticky="ew", pady=(0, 14))
+        ctk.CTkLabel(history_card, text="SESSION HISTORY",
+                     font=ctk.CTkFont("Segoe UI", 14, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=18, pady=(14, 6))
+        self.history_box = ctk.CTkTextbox(history_card, height=118, fg_color=BG,
+                                          text_color=MUTED, corner_radius=10,
+                                          font=ctk.CTkFont("Consolas", 11))
+        self.history_box.pack(fill="x", padx=14, pady=(0, 14))
+        self.history_box.configure(state="disabled")
+
         # Log card
         log_card = ctk.CTkFrame(main, fg_color=PANEL, corner_radius=16,
                                 border_width=1, border_color=PANEL_EDGE)
-        log_card.grid(row=4, column=0, sticky="ew")
+        log_card.grid(row=5, column=0, sticky="ew")
         ctk.CTkLabel(log_card, text="ACTIVITY",
                      font=ctk.CTkFont("Segoe UI", 14, "bold"),
                      text_color=TEXT).pack(anchor="w", padx=18, pady=(14, 6))
@@ -867,6 +881,11 @@ class GameModeApp(ctk.CTk):
             self._log("Game closed")
             self._launched_session = None
             self._auto_marks.pop("disconnect", None)
+            record = self.engine.completed_session
+            self.engine.completed_session = None
+            if record:
+                core.append_history(record)
+                self._refresh_history()
         elif event == "restore_needed":
             self._restore_seq += 1
             self._log("Session over — restore your VPN (steps above)")
@@ -1008,6 +1027,29 @@ class GameModeApp(ctk.CTk):
             self.orb.itemconfigure(
                 self._orb_ring, outline=color if self._pulse_phase else PANEL_EDGE)
         self.after(500, self._tick)
+
+    # ------------------------------------------------------------------
+    # Session history
+    # ------------------------------------------------------------------
+
+    def _history_line(self, entry):
+        games = ", ".join(entry["games"])
+        when = entry["started_at"] or "?"
+        duration = fmt_duration(entry["duration_seconds"])
+        mode = "Game Mode on" if entry["game_mode_on"] else "Game Mode off"
+        restore = "restore needed" if entry["restore_needed"] else "no restore needed"
+        return f"{games}  ·  {when}  ·  {duration}  ·  {mode}, {restore}"
+
+    def _refresh_history(self):
+        entries = core.load_history()
+        if entries:
+            lines = [self._history_line(e) for e in entries[-8:][::-1]]
+        else:
+            lines = ["No sessions yet — play a game and it will show up here."]
+        self.history_box.configure(state="normal")
+        self.history_box.delete("1.0", "end")
+        self.history_box.insert("end", "\n".join(lines))
+        self.history_box.configure(state="disabled")
 
     # ------------------------------------------------------------------
     # Log + lifecycle
