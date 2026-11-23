@@ -43,8 +43,8 @@ def test_helper_launch_has_a_console():
 
 
 def test_version_is_1_1_0():
-    assert gui.VERSION == "1.2.4"
-    print("PASS app version is 1.2.4")
+    assert gui.VERSION == "1.2.5"
+    print("PASS app version is 1.2.5")
 
 
 def test_startup_command():
