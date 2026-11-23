@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+import tkinter as tk
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -31,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -685,6 +686,9 @@ class HeatWatchApp(ctk.CTk):
                          text_color=FAINT).pack(anchor="w", padx=8,
                                                 pady=4)
         for record in recent:
+            row = ctk.CTkFrame(self.history_frame,
+                               fg_color="transparent")
+            row.pack(fill="x", padx=4, pady=1)
             when = time.strftime(
                 "%b %d %H:%M", time.localtime(record.get("start", 0)))
             text = (f"{when}  •  {record.get('game', '?')}  •  "
@@ -693,10 +697,16 @@ class HeatWatchApp(ctk.CTk):
                     f"peak GPU {fmt_temp(record.get('peak_gpu'))}  •  "
                     f"over line "
                     f"{fmt_duration(record.get('sec_above_cpu'))}")
-            ctk.CTkLabel(self.history_frame, text=text,
+            ctk.CTkLabel(row, text=text,
                          font=ctk.CTkFont(size=12),
-                         text_color=TEXT).pack(anchor="w", padx=8,
-                                               pady=2)
+                         text_color=TEXT).pack(side="left", padx=4)
+            if record.get("series"):
+                ctk.CTkButton(
+                    row, text="Graph", width=64, height=24,
+                    fg_color=CARD, hover_color="#1D2347",
+                    text_color=TEXT,
+                    command=lambda r=record: self._show_session_graph(r)
+                    ).pack(side="right", padx=4)
         result = core.verdict(self.history)
         title, color, detail = VERDICT_TEXT[result["level"]]
         self.verdict_title.configure(text=title, text_color=color)
@@ -706,6 +716,102 @@ class HeatWatchApp(ctk.CTk):
                      f"{result['sessions_used']} full sessions: "
                      f"{fmt_temp(result['median_peak_cpu'])}.")
         self.verdict_detail.configure(text=detail + extra)
+
+    def _show_session_graph(self, record):
+        """Detail window: the session's CPU/GPU curves over time,
+        with the warning lines, so a spike's shape is visible."""
+        window = ctk.CTkToplevel(self)
+        when = time.strftime("%b %d %H:%M",
+                             time.localtime(record.get("start", 0)))
+        window.title(f"Session graph — {record.get('game', '?')}")
+        window.geometry("700x470")
+        window.configure(fg_color=BG)
+        ctk.CTkLabel(window,
+                     text=f"{record.get('game', '?')}  •  {when}  •  "
+                          f"{fmt_duration(record.get('duration_s'))}",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=TEXT).pack(anchor="w", padx=18,
+                                           pady=(14, 2))
+        ctk.CTkLabel(window,
+                     text=f"Peak CPU {fmt_temp(record.get('peak_cpu'))}"
+                          f"  •  Peak GPU "
+                          f"{fmt_temp(record.get('peak_gpu'))}",
+                     font=ctk.CTkFont(size=12),
+                     text_color=MUTED).pack(anchor="w", padx=18,
+                                            pady=(0, 8))
+        series = record.get("series") or []
+        if not series:
+            ctk.CTkLabel(window,
+                         text="No temperature samples were recorded "
+                              "for this session — it was recorded "
+                              "before the graph feature.",
+                         font=ctk.CTkFont(size=12), text_color=MUTED,
+                         wraplength=620, justify="left",
+                         anchor="w").pack(anchor="w", padx=18, pady=12)
+            ctk.CTkButton(window, text="Close", fg_color=VIOLET,
+                          text_color="white",
+                          command=window.destroy).pack(pady=12)
+            return
+        width, height = 640, 280
+        geometry = core.chart_points(
+            series, width, height,
+            warn_cpu=record.get("warn_cpu",
+                                self.settings["warn_cpu_c"]),
+            warn_gpu=record.get("warn_gpu",
+                                self.settings["warn_gpu_c"]))
+        canvas = tk.Canvas(window, width=width, height=height,
+                           bg=PANEL, highlightthickness=0)
+        canvas.pack(padx=18, pady=(0, 8))
+        for mark, y in geometry["grid"]:
+            canvas.create_line(44, y, width - 12, y, fill=PANEL_EDGE)
+            canvas.create_text(38, y, text=f"{mark}°", fill=FAINT,
+                               font=("Segoe UI", 9), anchor="e")
+        if geometry["warn_cpu_y"] is not None:
+            canvas.create_line(44, geometry["warn_cpu_y"], width - 12,
+                               geometry["warn_cpu_y"], fill=RED,
+                               dash=(5, 3))
+        if geometry["warn_gpu_y"] is not None:
+            canvas.create_line(44, geometry["warn_gpu_y"], width - 12,
+                               geometry["warn_gpu_y"], fill=AMBER,
+                               dash=(5, 3))
+        if len(geometry["cpu"]) >= 2:
+            canvas.create_line(*[coord for point in geometry["cpu"]
+                                 for coord in point],
+                               fill=ORANGE, width=2)
+        if len(geometry["gpu"]) >= 2:
+            canvas.create_line(*[coord for point in geometry["gpu"]
+                                 for coord in point],
+                               fill=CYAN, width=2)
+        canvas.create_text(44, height - 8, text="0:00", fill=FAINT,
+                           font=("Segoe UI", 9), anchor="n")
+        canvas.create_text(width - 12, height - 8,
+                           text=fmt_duration(geometry["t_max"]),
+                           fill=FAINT, font=("Segoe UI", 9), anchor="n")
+        legend = ctk.CTkFrame(window, fg_color="transparent")
+        legend.pack(anchor="w", padx=18, pady=(0, 4))
+        ctk.CTkLabel(legend, text="— CPU",
+                     font=ctk.CTkFont(size=12),
+                     text_color=ORANGE).pack(side="left", padx=(0, 16))
+        ctk.CTkLabel(legend, text="— GPU",
+                     font=ctk.CTkFont(size=12),
+                     text_color=CYAN).pack(side="left", padx=(0, 16))
+        ctk.CTkLabel(legend, text="- - CPU warning line",
+                     font=ctk.CTkFont(size=12),
+                     text_color=RED).pack(side="left", padx=(0, 16))
+        ctk.CTkLabel(legend, text="- - GPU warning line",
+                     font=ctk.CTkFont(size=12),
+                     text_color=AMBER).pack(side="left")
+        if not geometry["cpu"]:
+            ctk.CTkLabel(window, text="CPU: no samples in this session",
+                         font=ctk.CTkFont(size=12),
+                         text_color=MUTED).pack(anchor="w", padx=18)
+        if not geometry["gpu"]:
+            ctk.CTkLabel(window, text="GPU: no samples in this session",
+                         font=ctk.CTkFont(size=12),
+                         text_color=MUTED).pack(anchor="w", padx=18)
+        ctk.CTkButton(window, text="Close", fg_color=VIOLET,
+                      text_color="white",
+                      command=window.destroy).pack(pady=10)
 
     # -- Settings actions -----------------------------------------------------
 
