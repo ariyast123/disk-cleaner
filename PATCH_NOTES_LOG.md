@@ -47,3 +47,8 @@ the weekly digest job reads the last 7 days and posts them in chat
   (CREATE_NEW_CONSOLE), identical to a manual double-click.
   Landing on this version takes one manual finish_update run;
   after that, updates are fully automatic.
+
+## 2026-11-22 — v1.2.3 (test update)
+
+- Test update at Ariya's request, to exercise the fixed
+  automatic update flow. No changes to the app itself.
