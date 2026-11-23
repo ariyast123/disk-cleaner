@@ -12,6 +12,7 @@ GOOD = {
     "gamemode_vpn_app.py": b"print('app')\n",
     "gamemode_core.py": b"print('core')\n",
     "build.bat": b"@echo off\n",
+    "gamemode_icon.ico": b"\x00\x00\x01\x00",
 }
 
 
