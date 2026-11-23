@@ -96,3 +96,25 @@ proceeds, ERROR_ALREADY_EXISTS refuses, NULL handle and ctypes
 exceptions fail open. 15 rounds all pass, pyflakes clean.
 Published off-cycle by the web instance; the baton was left
 untouched.
+
+## 2026-11-22 — v1.2.5 (off-cycle hotfix)
+
+Two fixes from Ariya's first full v1.2.4 session. (1) Auto
+CONNECT after a game failed with "Proton's window was not found"
+(74 s stall in his log) while auto DISCONNECT worked: the UIA
+backend used top_window(), which can hand back a hidden shell
+window with no buttons. The backend now enumerates the Proton
+process's windows, picks the one exposing the most controls
+(new pure helper _pick_main_window), restores it when hidden or
+minimized, connects with an explicit timeout, and the overall
+auto timeout rises 15 s -> 25 s. (2) The v1.2.3 update helper
+never fired on its own even after Ariya End-tasked the stacked
+instances (a lingering copy kept its wait loop busy; he ran
+finish_update.bat manually in the end). The helper now logs
+every phase into update_build.log from the first line, caps the
+wait at ~60 s, then force-closes leftover GameModeVPN.exe copies
+(taskkill /F) and builds anyway; build output appends to the
+same log. New test round 16 covers _pick_main_window, the
+backend's pick-and-restore with a fake pywinauto Application,
+and the helper's new lines. 16 rounds all pass, pyflakes clean.
+Published off-cycle by the web instance; baton untouched.
