@@ -24,7 +24,7 @@ its own independent baton, starting at "web".
    temperature source must stay visible as "none", never
    silently filled with guesses.
 4. Run the FULL test suite (every round in `heatwatch/tests/`;
-   GUI rounds 8, 11 and 15 under xvfb-run with tests/venv).
+   GUI rounds 8, 11, 15 and 16 under xvfb-run with tests/venv).
    Publish nothing on a failing day — revert and report
    honestly.
 5. Publish order: changed source files -> tests ->
