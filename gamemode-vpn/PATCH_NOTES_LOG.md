@@ -197,3 +197,18 @@ flow with fakes. 20 rounds all pass, pyflakes clean. Note: the
 update TO 1.2.9 still runs under 1.2.8's flow (one last OK
 click on its dialog); from 1.2.9 on the restart is click-free.
 Baton untouched.
+
+## 2026-11-22 — v1.3.0
+
+Session history (roadmap item 2): every finished game session is
+now recorded — games played, start time, length, how long Game Mode
+was on, whether a restore was needed, and the best state reached
+(gaming > bare > blocked > protected) — to history.json in
+~/GameModeVPN, and the last 8 sessions show in a new SESSION HISTORY
+card in the main window. The file is capped at 50 entries (oldest
+drop first), a corrupt or foreign file degrades to empty history,
+and a failed write is silently skipped: history is never
+load-bearing. Covered by new test rounds 21 (engine records +
+storage, including corrupt-file tolerance and the 50-entry cap)
+and 22 (GUI: empty message, session appears after the game ends,
+history survives a restart). All 22 rounds pass, pyflakes clean.
