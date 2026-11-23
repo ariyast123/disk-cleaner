@@ -235,3 +235,8 @@ build proceeds anyway), then the build, copy-back and
 relaunch run as before. The app's guaranteed-exit timer drops
 from 3 s to 1 s. Test rounds 14, 16 and 20 updated for the
 kill-first helper; all 23 rounds pass.
+
+## 2026-11-22 — v1.3.3 (test update)
+
+- Test update at Ariya's request, to exercise the update
+  flow. No changes to the app itself.
