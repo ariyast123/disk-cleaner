@@ -4,7 +4,7 @@ REM Run this in the folder that holds gamemode_vpn_app.py and gamemode_core.py.
 setlocal
 cd /d "%~dp0"
 
-python -m pip install --upgrade customtkinter psutil pyinstaller
+python -m pip install --upgrade customtkinter psutil pywinauto pystray pillow pyinstaller
 if errorlevel 1 goto :fail
 
 python -m PyInstaller --onefile --windowed --name GameModeVPN --collect-all customtkinter --noconfirm gamemode_vpn_app.py
