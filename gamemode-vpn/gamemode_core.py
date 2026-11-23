@@ -483,7 +483,7 @@ def collect_snapshot(settings, cache, now=None):
 # Self-update helpers (GitHub channel, same design as Disk Cleaner)
 # ---------------------------------------------------------------------------
 
-UPDATE_FILES = ("gamemode_vpn_app.py", "gamemode_core.py", "build.bat")
+UPDATE_FILES = ("gamemode_vpn_app.py", "gamemode_core.py", "build.bat", "gamemode_icon.ico")
 UPDATE_PY_SOURCES = ("gamemode_vpn_app.py", "gamemode_core.py")
 
 
