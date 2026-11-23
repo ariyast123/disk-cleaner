@@ -51,6 +51,9 @@ def default_settings():
         "poll_seconds": 2.0,
         "gone_debounce_seconds": 10.0,
         "auto_launch_proton": True,
+        "auto_mode": True,          # click Proton's buttons via UI Automation
+        "minimize_to_tray": True,   # closing the window hides to the tray
+        "kill_switch_seen": None,   # learned: True / False / None (unknown)
         "adapter_keywords": ["proton"],
         "proton_path": "",          # "" = auto-detect
         "start_with_windows": False,
@@ -91,6 +94,10 @@ def normalize_settings(raw):
     settings["gone_debounce_seconds"] = _clamp(
         raw.get("gone_debounce_seconds"), 0.0, 120.0, settings["gone_debounce_seconds"])
     settings["auto_launch_proton"] = bool(raw.get("auto_launch_proton", True))
+    settings["auto_mode"] = bool(raw.get("auto_mode", True))
+    settings["minimize_to_tray"] = bool(raw.get("minimize_to_tray", True))
+    if raw.get("kill_switch_seen") in (True, False):
+        settings["kill_switch_seen"] = raw["kill_switch_seen"]
     settings["start_with_windows"] = bool(raw.get("start_with_windows", False))
     if isinstance(raw.get("proton_path"), str):
         settings["proton_path"] = raw["proton_path"].strip()
@@ -266,11 +273,52 @@ def ping_host(host, timeout_ms=700):
         return None
 
 
-def find_proton_exe(settings=None):
-    """Locate ProtonVPN.exe: settings override first, then known paths."""
+PROTON_BASE_DIRS = [
+    r"C:\Program Files\Proton\VPN",
+    r"C:\Program Files (x86)\Proton\VPN",
+]
+
+# Proton 5.x installs into a versioned folder (e.g. VPN\v5.1.10) and
+# the main executable is ProtonVPN.Client.exe; older versions used a
+# flat ProtonVPN.exe. Both names are searched, newest version wins.
+PROTON_EXE_NAMES = ("ProtonVPN.Client.exe", "ProtonVPN.exe")
+
+
+def _version_key(folder_name):
+    """'v5.1.10' -> (5, 1, 10); unparseable -> (-1,)."""
+    text = folder_name.strip().lower().lstrip("v")
+    parts = []
+    for chunk in text.split("."):
+        digits = "".join(c for c in chunk if c.isdigit())
+        if not digits:
+            return (-1,)
+        parts.append(int(digits))
+    return tuple(parts) or (-1,)
+
+
+def find_proton_exe(settings=None, bases=None):
+    """Locate the Proton client: settings override first, then the
+    versioned install folders (newest version wins), then flat paths."""
     override = (settings or {}).get("proton_path", "")
     if override and os.path.isfile(override):
         return override
+    best = None  # (version_key, -name_rank, path)
+    for base in (PROTON_BASE_DIRS if bases is None else bases):
+        try:
+            entries = os.listdir(base)
+        except OSError:
+            entries = []
+        folders = [("", base)] + [(name, os.path.join(base, name)) for name in entries
+                                  if _version_key(name) != (-1,)]
+        for folder_name, folder in folders:
+            for rank, exe_name in enumerate(PROTON_EXE_NAMES):
+                path = os.path.join(folder, exe_name)
+                if os.path.isfile(path):
+                    key = (_version_key(folder_name) if folder_name else (0,), -rank)
+                    if best is None or key > best[0]:
+                        best = (key, path)
+    if best is not None:
+        return best[1]
     for candidate in PROTON_EXE_CANDIDATES:
         if os.path.isfile(candidate):
             return candidate
@@ -287,6 +335,119 @@ def launch_proton(settings=None):
     except OSError:
         return None
     return path
+
+
+# ---------------------------------------------------------------------------
+# Proton auto control via UI Automation
+#
+# Proton's Windows app has no CLI/API, and its tunnel is held by a
+# Windows service, so closing the app window does NOT disconnect the
+# VPN. The one clean way to work the app itself is UI Automation —
+# the same accessibility layer screen readers use: find Proton's own
+# Disconnect / Connect button and invoke it, exactly like a click.
+# Every failure returns (False, reason) so the caller can fall back
+# to the guided steps; this layer never raises and never guesses.
+# ---------------------------------------------------------------------------
+
+AUTO_BUTTONS = {
+    "disconnect": ("Disconnect",),
+    "connect": ("Quick Connect", "Connect"),
+}
+
+PROTON_PROCESS_NAMES = ("protonvpn.client.exe", "protonvpn.exe")
+
+
+class _PywinautoBackend:
+    """Real backend over pywinauto's UIA tree (imported lazily)."""
+
+    def __init__(self):
+        from pywinauto import Application  # ImportError if unavailable
+        self._application_cls = Application
+
+    def window(self, timeout=12.0):
+        import psutil
+
+        deadline = time.monotonic() + timeout
+        while True:
+            pid = None
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    if (proc.info.get("name") or "").lower() in PROTON_PROCESS_NAMES:
+                        pid = proc.info["pid"]
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            if pid is not None:
+                try:
+                    app = self._application_cls(backend="uia").connect(process=pid)
+                    win = app.top_window()
+                    if win.exists(timeout=1):
+                        return win
+                except Exception:
+                    pass
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.5)
+
+    def buttons(self, window):
+        found = []
+        for ctrl in window.descendants(control_type="Button"):
+            try:
+                found.append((ctrl.window_text() or "", ctrl))
+            except Exception:
+                continue
+        return found
+
+    def invoke(self, control):
+        try:
+            control.invoke()
+        except Exception:
+            control.click_input()
+
+
+def _pick_button(buttons, wanted_names):
+    """Exact (case-insensitive) name match wins; 'Connect' must never
+    match the 'Disconnect' button, so substring matching is banned."""
+    cleaned = [(name.strip(), ctrl) for name, ctrl in buttons if name and name.strip()]
+    for wanted in wanted_names:
+        for name, ctrl in cleaned:
+            if name.lower() == wanted.lower():
+                return name, ctrl
+    return None, None
+
+
+def auto_proton_action(action, backend=None, timeout=12.0):
+    """Click Proton's own button for `action` ('disconnect'/'connect').
+
+    Returns (ok, detail). ok=False always carries the reason, and the
+    caller falls back to the guided steps — auto mode is an
+    accelerator, never a single point of failure."""
+    wanted = AUTO_BUTTONS.get(action)
+    if not wanted:
+        return (False, f"unknown action {action!r}")
+    if backend is None:
+        try:
+            backend = _PywinautoBackend()
+        except Exception as exc:
+            return (False, f"auto control unavailable ({type(exc).__name__})")
+    try:
+        win = backend.window(timeout=timeout)
+    except Exception as exc:
+        return (False, f"could not reach Proton's window ({type(exc).__name__})")
+    if win is None:
+        return (False, "Proton's window was not found")
+    try:
+        buttons = backend.buttons(win)
+    except Exception as exc:
+        return (False, f"could not read Proton's controls ({type(exc).__name__})")
+    name, ctrl = _pick_button(buttons, wanted)
+    if ctrl is None:
+        return (False, f"the {wanted[0]} button was not found in Proton")
+    try:
+        backend.invoke(ctrl)
+    except Exception as exc:
+        return (False, f"clicking {name} failed ({type(exc).__name__})")
+    return (True, f"clicked {name} in Proton")
 
 
 class SnapshotCache:
@@ -438,6 +599,15 @@ class Engine:
         self.game_mode_start = None
         self._gone_since = None
         self._last_blocked = False
+        # Kill-switch learning: a session that passes through
+        # "blocked" proves the kill switch is on; a protected session
+        # that reaches "bare" without ever blocking proves it is off.
+        # While unknown (None) the steps show the full kill-switch
+        # version; once learned False they shorten to the plain
+        # Disconnect / Connect pair.
+        self.ks_seen = settings.get("kill_switch_seen")
+        self._session_blocked = False
+        self._session_was_protected = False
 
     # -- helpers -----------------------------------------------------------
 
@@ -469,12 +639,22 @@ class Engine:
                 self.session_start = now
                 self.game_mode_start = None
                 self.was_protected = (vpn_state == "protected")
+                self._session_blocked = False
+                self._session_was_protected = (vpn_state == "protected")
                 for name in sorted(started or running_games):
                     events.append(f"game_started:{name}")
                 events.append("action_needed")
+            if self.mode in ("action_needed", "gaming"):
+                if vpn_state == "protected":
+                    self._session_was_protected = True
+                if vpn_state == "blocked":
+                    self._session_blocked = True
+                    self.ks_seen = True
             if self.mode == "action_needed" and vpn_state == "bare":
                 self.mode = "gaming"
                 self.game_mode_start = now
+                if self._session_was_protected:
+                    self.ks_seen = self._session_blocked
                 events.append("game_mode_on")
             if vpn_state == "blocked" and not self._last_blocked and self.mode == "action_needed":
                 events.append("blocked_midway")
@@ -508,6 +688,11 @@ class Engine:
         """[(text, state)] with state in done | current | next | warn."""
         if self.mode == "action_needed":
             if self.vpn_state == "protected":
+                if self.ks_seen is False:
+                    return [
+                        ("In Proton: click Disconnect", "current"),
+                        ("Game Mode turns on by itself once you are bare", "next"),
+                    ]
                 return [
                     ("In Proton: Settings > Connection > Kill switch — set it to Off", "current"),
                     ("Then click Disconnect in Proton", "next"),
@@ -531,6 +716,11 @@ class Engine:
                 return [
                     ("The Kill Switch is back On — good", "done"),
                     ("Now click Connect in Proton (Quick Connect)", "current"),
+                    ("Protection restores by itself once the tunnel is up", "next"),
+                ]
+            if self.ks_seen is False:
+                return [
+                    ("In Proton: click Connect (Quick Connect)", "current"),
                     ("Protection restores by itself once the tunnel is up", "next"),
                 ]
             return [
