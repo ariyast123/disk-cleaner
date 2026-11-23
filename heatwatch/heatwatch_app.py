@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -411,8 +411,11 @@ class HeatWatchApp(ctk.CTk):
         self.gpu_gauge.set(0)
         self.gpu_gauge.pack(fill="x", padx=14, pady=(2, 10))
 
-        verdict_card = ctk.CTkFrame(sidebar, fg_color=CARD,
-                                    corner_radius=12)
+        self.verdict_card = ctk.CTkFrame(sidebar, fg_color=CARD,
+                                         border_color=PANEL_EDGE,
+                                         border_width=1,
+                                         corner_radius=12)
+        verdict_card = self.verdict_card
         verdict_card.pack(fill="x", padx=16, pady=(0, 8))
         ctk.CTkLabel(verdict_card, text="REPASTE VERDICT",
                      font=ctk.CTkFont(size=11), text_color=MUTED).pack(
@@ -451,11 +454,23 @@ class HeatWatchApp(ctk.CTk):
                               corner_radius=0)
         accent.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
 
+        header = ctk.CTkFrame(main, fg_color="transparent")
+        header.grid(row=1, column=0, sticky="ew", padx=18,
+                    pady=(14, 10))
+        ctk.CTkLabel(header, text="Overview",
+                     font=ctk.CTkFont(size=20, weight="bold"),
+                     text_color=TEXT).pack(side="left")
+        self.state_label = ctk.CTkLabel(
+            header, text="WAITING FOR SENSORS",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=FAINT)
+        self.state_label.pack(side="right")
+
         self.session_card = ctk.CTkFrame(main, fg_color=PANEL,
                                          border_color=PANEL_EDGE,
                                          border_width=1, corner_radius=14)
-        self.session_card.grid(row=1, column=0, sticky="ew",
-                               padx=18, pady=(16, 10))
+        self.session_card.grid(row=2, column=0, sticky="ew",
+                               padx=18, pady=(0, 10))
         ctk.CTkLabel(self.session_card, text="CURRENT SESSION",
                      font=ctk.CTkFont(size=12, weight="bold"),
                      text_color=MUTED).pack(anchor="w", padx=16,
@@ -470,12 +485,31 @@ class HeatWatchApp(ctk.CTk):
                                     "a watched game opens.",
             font=ctk.CTkFont(size=12), text_color=MUTED,
             wraplength=640, justify="left", anchor="w")
-        self.session_detail.pack(anchor="w", padx=16, pady=(2, 12))
+        self.session_detail.pack(anchor="w", padx=16, pady=(2, 6))
+        chips = ctk.CTkFrame(self.session_card, fg_color="transparent")
+        chips.pack(anchor="w", padx=16, pady=(0, 12))
+        self.chip_peak_cpu = ctk.CTkLabel(
+            chips, text="PEAK CPU —", font=ctk.CTkFont(size=11,
+                                                      weight="bold"),
+            text_color=MUTED, fg_color=CARD, corner_radius=8)
+        self.chip_peak_cpu.pack(side="left", padx=(0, 8), ipadx=8,
+                                ipady=3)
+        self.chip_peak_gpu = ctk.CTkLabel(
+            chips, text="PEAK GPU —", font=ctk.CTkFont(size=11,
+                                                      weight="bold"),
+            text_color=MUTED, fg_color=CARD, corner_radius=8)
+        self.chip_peak_gpu.pack(side="left", padx=(0, 8), ipadx=8,
+                                ipady=3)
+        self.chip_over = ctk.CTkLabel(
+            chips, text="OVER LINE —", font=ctk.CTkFont(size=11,
+                                                       weight="bold"),
+            text_color=MUTED, fg_color=CARD, corner_radius=8)
+        self.chip_over.pack(side="left", ipadx=8, ipady=3)
 
         graph_card = ctk.CTkFrame(main, fg_color=PANEL,
                                   border_color=PANEL_EDGE,
                                   border_width=1, corner_radius=14)
-        graph_card.grid(row=2, column=0, sticky="ew", padx=18,
+        graph_card.grid(row=3, column=0, sticky="ew", padx=18,
                         pady=(0, 10))
         ctk.CTkLabel(graph_card, text="LAST MINUTES — CPU (orange) "
                                       "• GPU (cyan) • dashed = CPU "
@@ -490,7 +524,7 @@ class HeatWatchApp(ctk.CTk):
         history_card = ctk.CTkFrame(main, fg_color=PANEL,
                                     border_color=PANEL_EDGE,
                                     border_width=1, corner_radius=14)
-        history_card.grid(row=3, column=0, sticky="ew", padx=18,
+        history_card.grid(row=4, column=0, sticky="ew", padx=18,
                           pady=(0, 10))
         ctk.CTkLabel(history_card, text="SESSION HISTORY",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -503,7 +537,7 @@ class HeatWatchApp(ctk.CTk):
         games_card = ctk.CTkFrame(main, fg_color=PANEL,
                                   border_color=PANEL_EDGE,
                                   border_width=1, corner_radius=14)
-        games_card.grid(row=4, column=0, sticky="ew", padx=18,
+        games_card.grid(row=5, column=0, sticky="ew", padx=18,
                         pady=(0, 10))
         ctk.CTkLabel(games_card, text="WATCHED GAMES",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -517,7 +551,7 @@ class HeatWatchApp(ctk.CTk):
         settings_card = ctk.CTkFrame(main, fg_color=PANEL,
                                      border_color=PANEL_EDGE,
                                      border_width=1, corner_radius=14)
-        settings_card.grid(row=5, column=0, sticky="ew", padx=18,
+        settings_card.grid(row=6, column=0, sticky="ew", padx=18,
                            pady=(0, 10))
         ctk.CTkLabel(settings_card, text="SETTINGS",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -558,7 +592,7 @@ class HeatWatchApp(ctk.CTk):
         log_card = ctk.CTkFrame(main, fg_color=PANEL,
                                 border_color=PANEL_EDGE,
                                 border_width=1, corner_radius=14)
-        log_card.grid(row=6, column=0, sticky="ew", padx=18,
+        log_card.grid(row=7, column=0, sticky="ew", padx=18,
                       pady=(0, 16))
         ctk.CTkLabel(log_card, text="ACTIVITY",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -595,6 +629,7 @@ class HeatWatchApp(ctk.CTk):
     def _render_games(self):
         for child in self.games_frame.winfo_children():
             child.destroy()
+        self.game_dots = {}
         for idx, game in enumerate(self.settings["games"]):
             row = ctk.CTkFrame(self.games_frame, fg_color=CARD,
                                corner_radius=10)
@@ -607,6 +642,11 @@ class HeatWatchApp(ctk.CTk):
                                 corner_radius=8, text_color="white",
                                 font=ctk.CTkFont(size=12, weight="bold"))
             tile.pack(side="left", padx=(8, 10), pady=6)
+            dot = ctk.CTkLabel(row, text="●",
+                               font=ctk.CTkFont(size=12),
+                               text_color=FAINT)
+            dot.pack(side="left", padx=(0, 6))
+            self.game_dots[game["name"]] = dot
             ctk.CTkLabel(row, text=game["name"],
                          font=ctk.CTkFont(size=13), text_color=TEXT
                          ).pack(side="left")
@@ -675,6 +715,10 @@ class HeatWatchApp(ctk.CTk):
         self.buffer.push(payload["now"], temps["cpu"], temps["gpu"])
         self._draw_sparkline()
         self._draw_orb()
+        running = set(payload["games"])
+        for name, dot in getattr(self, "game_dots", {}).items():
+            dot.configure(
+                text_color=GREEN if name in running else FAINT)
         self.cpu_warn_label.configure(
             text=f"warning at {warn_cpu}°C")
         source = temps["source"]
@@ -715,6 +759,22 @@ class HeatWatchApp(ctk.CTk):
             self.session_detail.configure(
                 text="Temperatures are still being watched — a "
                      "session starts when a watched game opens.")
+            self.chip_peak_cpu.configure(text="PEAK CPU —",
+                                         text_color=MUTED)
+            self.chip_peak_gpu.configure(text="PEAK GPU —",
+                                         text_color=MUTED)
+            self.chip_over.configure(text="OVER LINE —",
+                                     text_color=MUTED)
+            if temps["source"] == "none":
+                self.state_label.configure(
+                    text="WAITING FOR SENSORS", text_color=FAINT)
+            elif (temps["cpu"] is not None
+                    and temps["cpu"] >= warn_cpu):
+                self.state_label.configure(text="RUNNING HOT",
+                                           text_color=RED)
+            else:
+                self.state_label.configure(text="IDLE — WATCHING",
+                                           text_color=MUTED)
         else:
             hot = (temps["cpu"] is not None
                    and temps["cpu"] >= warn_cpu)
@@ -729,6 +789,20 @@ class HeatWatchApp(ctk.CTk):
                      f"Over the line: CPU "
                      f"{fmt_duration(current['sec_above_cpu'])}, GPU "
                      f"{fmt_duration(current['sec_above_gpu'])}")
+            self.chip_peak_cpu.configure(
+                text=f"PEAK CPU {fmt_temp(current['peak_cpu'])}",
+                text_color=temp_color(current["peak_cpu"], warn_cpu))
+            self.chip_peak_gpu.configure(
+                text=f"PEAK GPU {fmt_temp(current['peak_gpu'])}",
+                text_color=temp_color(current["peak_gpu"], warn_gpu))
+            self.chip_over.configure(
+                text="OVER LINE "
+                     f"{fmt_duration(current['sec_above_cpu'])}",
+                text_color=RED if current["sec_above_cpu"] > 0
+                else MUTED)
+            self.state_label.configure(
+                text=f"IN SESSION — {current['game']}",
+                text_color=RED if hot else CYAN)
 
     # -- Live visuals -----------------------------------------------------------
 
@@ -790,6 +864,18 @@ class HeatWatchApp(ctk.CTk):
                 width / 2, height / 2,
                 text="Collecting temperatures…",
                 fill=FAINT, font=("Segoe UI", 10))
+        cpu_now = self.latest.get("cpu")
+        gpu_now = self.latest.get("gpu")
+        if cpu_now is not None:
+            canvas.create_text(width - 6, 10, anchor="e",
+                               text=f"CPU {cpu_now:.0f}°",
+                               fill=ORANGE, font=("Segoe UI", 9,
+                                                  "bold"))
+        if gpu_now is not None:
+            canvas.create_text(width - 6, 24, anchor="e",
+                               text=f"GPU {gpu_now:.0f}°",
+                               fill=CYAN, font=("Segoe UI", 9,
+                                                "bold"))
 
     def _refresh_history(self):
         for child in self.history_frame.winfo_children():
@@ -831,6 +917,9 @@ class HeatWatchApp(ctk.CTk):
         result = core.verdict(self.history)
         title, color, detail = VERDICT_TEXT[result["level"]]
         self.verdict_title.configure(text=title, text_color=color)
+        self.verdict_card.configure(
+            border_color=PANEL_EDGE if result["level"] == "unknown"
+            else color)
         extra = ""
         if result["median_peak_cpu"] is not None:
             extra = (f" Median peak CPU over the last "
