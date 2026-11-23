@@ -11,6 +11,21 @@ startup, offers one-click updates, and shows a What's New window
 after each update. Daily updates alternate between Ariya's two
 Muse instances, opposite to Disk Cleaner's turns.
 
+## 2026-11-22 — v1.2.3 (off-cycle hotfix)
+
+Auto mode's first real-machine run (Ariya's log, Nov 22, 2026)
+reported "the Disconnect button was not found in Proton" — the
+scan ran once, the moment Proton's window existed, before its
+controls had necessarily loaded (and in his session the state
+went bare meanwhile, making the late failure message misleading
+as well). Fixes: the UIA scan now retries until its timeout,
+accepts exact-name controls of any type (Buttons preferred) in
+case Proton's Avalonia tree types them differently, failure
+details list the control names that were seen, and the app
+suppresses a stale auto failure when the job is already done
+("already bare — no click was needed"). This release is also
+the first delivered purely through the rebuilt in-app updater.
+
 ## 2026-11-22 — v1.2.2 (off-cycle, at Ariya's direct request)
 
 One consolidated manual-install release for every update problem
