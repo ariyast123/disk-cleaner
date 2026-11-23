@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -145,6 +145,35 @@ def apply_update_files(project_dir, files):
         with open(tmp, "wb") as fh:
             fh.write(data)
         os.replace(tmp, os.path.join(project_dir, name))
+
+
+def update_helper_lines(project, launched_exe):
+    """The finish_update.bat body: wait for every GameModeVPN.exe to
+    exit, rebuild, then copy the fresh exe back over the copy that
+    was actually launched (a taskbar pin may point at a standalone
+    copy outside dist) and relaunch THAT path — so a pinned
+    shortcut can never resurrect an old version after an update."""
+    built = os.path.join(project, "dist", "GameModeVPN.exe")
+    return [
+        "@echo off",
+        "title GameMode VPN update",
+        ":waitloop",
+        'tasklist /FI "IMAGENAME eq GameModeVPN.exe" 2>NUL | '
+        'find /I "GameModeVPN.exe" >NUL',
+        "if not errorlevel 1 (",
+        "  timeout /t 2 /nobreak >NUL",
+        "  goto waitloop",
+        ")",
+        f'cd /d "{project}"',
+        "call build.bat",
+        f'set "BUILT={built}"',
+        f'set "LAUNCHED={launched_exe}"',
+        'if exist "%BUILT%" (',
+        '  if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL',
+        '  start "" "%LAUNCHED%"',
+        ")",
+        "",
+    ]
 
 
 class GameModeApp(ctk.CTk):
@@ -629,22 +658,7 @@ class GameModeApp(ctk.CTk):
         this app to exit, rebuilds the exe and relaunches it."""
         project = project_folder()
         helper = os.path.join(project, "finish_update.bat")
-        exe = os.path.join(project, "dist", "GameModeVPN.exe")
-        lines = [
-            "@echo off",
-            "title GameMode VPN update",
-            ":waitloop",
-            'tasklist /FI "IMAGENAME eq GameModeVPN.exe" 2>NUL | '
-            'find /I "GameModeVPN.exe" >NUL',
-            "if not errorlevel 1 (",
-            "  timeout /t 2 /nobreak >NUL",
-            "  goto waitloop",
-            ")",
-            f'cd /d "{project}"',
-            "call build.bat",
-            f'if exist "{exe}" start "" "{exe}"',
-            "",
-        ]
+        lines = update_helper_lines(project, sys.executable)
         with open(helper, "w", encoding="ascii") as fh:
             fh.write("\r\n".join(lines))
         subprocess.Popen(
