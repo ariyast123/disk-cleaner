@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.8"
+VERSION = "1.2.9"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -173,7 +173,7 @@ def update_helper_lines(project, launched_exe):
     copy outside dist) and relaunch THAT path — so a pinned
     shortcut can never resurrect an old version after an update.
 
-    The wait is capped at ~60 seconds: the app that requested the
+    The wait is capped at ~30 seconds: the app that requested the
     update has already closed itself, so any copy still alive after
     that is a stale duplicate (five stacked copies once stalled an
     update silently) and is force-closed. Every phase is written
@@ -186,22 +186,25 @@ def update_helper_lines(project, launched_exe):
         f'cd /d "{project}"',
         'echo [helper] update started - waiting for GameMode VPN '
         'to close > update_build.log',
+        "echo GameMode VPN update: waiting for the app to close...",
         "set /a WAITS=0",
         ":waitloop",
         'tasklist /FI "IMAGENAME eq GameModeVPN.exe" 2>NUL | '
         'find /I "GameModeVPN.exe" >NUL',
         "if errorlevel 1 goto allclosed",
         "set /a WAITS+=1",
-        "if %WAITS% GEQ 30 goto forceclose",
+        "if %WAITS% GEQ 15 goto forceclose",
         "timeout /t 2 /nobreak >NUL",
         "goto waitloop",
         ":forceclose",
-        'echo [helper] copies still running after 60s - '
+        'echo [helper] copies still running after 30s - '
         'closing them >> update_build.log',
+        "echo GameMode VPN update: copies still open after 30s - closing them...",
         'taskkill /F /IM GameModeVPN.exe >NUL 2>&1',
         "timeout /t 2 /nobreak >NUL",
         ":allclosed",
         'echo [helper] building >> update_build.log',
+        "echo GameMode VPN update: building (1-2 minutes, details in update_build.log)...",
         "call build.bat auto >> update_build.log 2>&1",
         f'set "BUILT={built}"',
         f'set "LAUNCHED={launched_exe}"',
@@ -729,10 +732,19 @@ class GameModeApp(ctk.CTk):
             self._update_pending = True
             self._write_update_helper()
             self._log("Update ready — restarting to finish the update")
-            messagebox.showinfo(
-                "Update ready",
-                "The new files are in place.\n\nGameMode VPN will now "
-                "close, rebuild itself and reopen on the new version.")
+            if self._hidden_in_tray:
+                self._notify_tray(
+                    "Updating now — GameMode VPN will reopen on the "
+                    "new version.", "GameMode VPN update")
+            # No modal dialog on this path: one used to sit between
+            # starting the helper and closing the app, and a single
+            # unseen OK button stalled the whole update while the
+            # helper waited for a process that was waiting for a
+            # click. And guarantee the exit the helper waits for:
+            # if anything (a stuck thread, the tray loop) keeps
+            # this process alive after the window is gone, the
+            # timer ends it — the update must never wait on us.
+            threading.Timer(3.0, os._exit, args=(0,)).start()
             self._on_close()
         else:
             self._log("Update ready — restart the app to use it")
