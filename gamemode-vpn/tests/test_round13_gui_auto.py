@@ -96,8 +96,17 @@ def test_auto_wiring():
         # auto result logging path
         app._auto_result("disconnect", True, "clicked Disconnect in Proton")
         assert any("Auto mode: clicked Disconnect" in line for line in app._log_lines)
+        # engine is protected now: a late connect failure is stale
+        # (already protected) and must not be logged as a failure
+        app._auto_result("connect", False, "the Connect button was not found in Proton")
+        assert any("already protected" in line for line in app._log_lines)
+        # ...but with the need still real (bare), it logs the failure
+        app.engine.vpn_state = "bare"
         app._auto_result("connect", False, "the Connect button was not found in Proton")
         assert any("Auto mode could not connect" in line for line in app._log_lines)
+        # and a late disconnect failure while already bare is stale too
+        app._auto_result("disconnect", False, "the Disconnect button was not found in Proton")
+        assert any("already bare" in line for line in app._log_lines)
         print("PASS auto wiring: disconnect once, connect once, results logged")
     finally:
         app.destroy()
