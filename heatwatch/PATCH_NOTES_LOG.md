@@ -84,3 +84,8 @@ helper; all 17 rounds pass.
   (CREATE_NEW_CONSOLE), identical to a manual double-click.
   Landing on this version takes one manual finish_update run;
   after that, updates are fully automatic.
+
+## 2026-11-22 — v1.2.5 (test update)
+
+- Test update at Ariya's request, to exercise the fixed
+  automatic update flow. No changes to the app itself.
