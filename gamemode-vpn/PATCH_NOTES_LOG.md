@@ -138,3 +138,24 @@ clean. Note: the 1.2.4 -> 1.2.5 update again needed a manual
 finish_update run on his PC — that update was still executed by
 1.2.4's old uncapped, unlogged helper; the hardened helper ships
 in 1.2.5 and governs from this update on. Baton untouched.
+
+## 2026-11-22 — v1.2.7 (off-cycle, at Ariya's direct request)
+
+Boot behavior, Ariya's closing ask for the app. The Start-with-
+Windows entry now carries a --minimized flag (_startup_command),
+so a boot launch goes straight to the tray (_start_in_tray) and
+never presents the window; manual launches and the updater's
+relaunch carry no flag and open normally. Because his existing
+registry entry predates the flag, the app refreshes the entry on
+every launch when the setting is on (Windows only), so it
+self-heals with no action from him. While hidden in the tray, an
+available update now fires a tray notification (_notify_tray,
+also factored into the close-to-tray notice) instead of only the
+invisible banner — he opens the app himself to install. What's
+New no longer pops at a boot launch; the saved notes wait for
+the next visible open. Also fixed the stale update-confirm
+dialog text (it still described the pre-1.2.2 close-by-hand
+flow). New test round 18 (fake pystray): startup command,
+flag parsing, hide-to-tray, notify-while-hidden, What's New
+guard, visible-launch behavior. 18 rounds all pass, pyflakes
+clean. Baton untouched.
