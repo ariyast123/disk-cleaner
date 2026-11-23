@@ -5,33 +5,31 @@ on a decision Ariya has not made. Detection robustness always
 outranks new features: a wrong "protected" or "bare" claim is the
 worst bug this app can ship.
 
-1. **Windows detection hardening.** VERIFIED on Ariya's PC
-   (Nov 22, 2026): Proton VPN 5.1.10's main exe is
-   **ProtonVPN.Client.exe** — there is no ProtonVPN.exe — located in
-   the versioned folder `C:\Program Files\Proton\VPN\v5.1.10\`
-   (755 files). Fix `find_proton_exe` to glob
-   `C:\Program Files\Proton\VPN\v*\` for ProtonVPN.Client.exe first
-   (highest version folder wins), then ProtonVPN.exe for older
-   installs, and un-lock the Browse dialog's file filter (it
-   defaults to the exact name ProtonVPN.exe, which hid the real
-   exe). Also verify the Proton adapter names the current app
-   creates (WireGuard/Wintun naming) and consider a registry
-   uninstall-key lookup as a path fallback. Keep every probe
-   degrading to "unknown", never to a guess.
+1. **Windows detection hardening — DONE in v1.2.0.** Verified on
+   Ariya's PC (Nov 22, 2026): Proton VPN 5.1.10's main exe is
+   ProtonVPN.Client.exe in the versioned folder
+   `C:\Program Files\Proton\VPN\v5.1.10\`; `find_proton_exe` now
+   globs the versioned folders (newest version wins, Client name
+   first), the Browse filter is unlocked, and tunnel detection was
+   verified live on his machine. A registry uninstall-key lookup
+   remains an optional extra fallback if a future install layout
+   breaks the folder scan.
 2. **Session history.** Record each game session (game, start,
    length, peak state) to a local JSON history in ~/GameModeVPN and
    show a small history list in the UI.
-3. **Minimize to tray.** Optional tray icon (pystray) so the watcher
-   can live in the tray during long sessions; restore on click.
+3. **Minimize to tray — DONE in v1.2.0** (pystray; close hides to
+   the tray, double-click reopens, Quit in the tray menu).
 4. **Exe icon + branding.** A proper .ico for GameModeVPN.exe in
    build.bat, matching the violet/cyan look.
 5. **Ping proof.** After Game Mode turns on, optionally measure and
    show the real ping to a configurable host, so the improvement is
    visible, not just claimed. Off by default (privacy: it contacts
    the chosen host).
-6. **UIA auto-click investigation.** Research whether Proton's
-   current Windows UI exposes stable UI-Automation targets for
-   Disconnect/Connect and the kill-switch control. Only ship it if
-   it is provably reliable across a version bump, default OFF,
-   guided mode always available as fallback. If the investigation
-   says no, close this item with the evidence recorded here.
+6. **UIA auto-click — DONE in v1.2.0 as Auto mode.** At Ariya's
+   direct request (Nov 22, 2026) it shipped default ON with the
+   strict conditions kept: exact-name button matching (Connect can
+   never hit Disconnect), live state verification after every
+   click, and automatic fallback to the guided steps on any
+   failure. Watch for Proton UI renames in future updates; if the
+   buttons move, the fallback covers it and the names in
+   `AUTO_BUTTONS` (gamemode_core.py) are the fix.
