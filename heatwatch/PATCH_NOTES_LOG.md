@@ -21,3 +21,15 @@ the line, and keeps a repaste verdict — healthy, hot, or
 repaste due — from your recent full sessions. Starts hidden
 in the tray at boot, and updates itself like GameMode VPN
 does. 12 test rounds, all passing at release.
+
+## 2026-11-22 — v1.1.1 (off-cycle, at Ariya's direct request)
+
+UI polish pass: CPU and GPU cards gain gauge bars that fill
+and change color with the heat, a status orb in the sidebar
+shows the state at a glance (grey for no source, green calm,
+cyan in a session, pulsing red over the line), a new live
+graph card draws the last minutes of CPU/GPU temperatures
+with the CPU warning line dashed in, the session card's
+border turns red while the CPU is over the line, and every
+history row gets a severity dot colored by its peak. Two new
+test rounds (14 helpers, 15 GUI polish); all 15 rounds pass.
