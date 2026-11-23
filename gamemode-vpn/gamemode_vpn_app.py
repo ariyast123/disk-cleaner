@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -85,7 +85,15 @@ def fmt_duration(seconds):
 
 
 def _tray_image():
-    """The tray icon: a violet ring with a cyan core, like the orb."""
+    """The tray icon: the app icon (gamemode_icon.ico) when it is on
+    disk, else the drawn orb — a violet ring with a cyan core."""
+    try:
+        icon_path = os.path.join(project_folder(), "gamemode_icon.ico")
+        if os.path.isfile(icon_path):
+            image = Image.open(icon_path).convert("RGBA")
+            return image.resize((64, 64))
+    except Exception:
+        pass
     image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     draw.ellipse([5, 5, 59, 59], outline=(124, 92, 255, 255), width=4)
@@ -165,12 +173,14 @@ def update_helper_lines(project, launched_exe):
         "  goto waitloop",
         ")",
         f'cd /d "{project}"',
-        "call build.bat",
+        "call build.bat auto > update_build.log 2>&1",
         f'set "BUILT={built}"',
         f'set "LAUNCHED={launched_exe}"',
         'if exist "%BUILT%" (',
         '  if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL',
         '  start "" "%LAUNCHED%"',
+        ") else (",
+        '  if exist "%LAUNCHED%" start "" "%LAUNCHED%"',
         ")",
         "",
     ]
@@ -190,12 +200,19 @@ class GameModeApp(ctk.CTk):
         self.manual_restore = False
         self._auto_marks = {}       # auto action -> marker already attempted
         self._restore_seq = 0
+        self._update_pending = False
         self._tray_icon = None
         self._tray_notice_shown = False
         self._pulse_phase = False
         self._log_lines = []
 
         self.title("GameMode VPN")
+        try:
+            _icon = os.path.join(project_folder(), "gamemode_icon.ico")
+            if os.path.isfile(_icon):
+                self.iconbitmap(_icon)
+        except Exception:
+            pass
         self.geometry("1140x760")
         self.minsize(1000, 660)
         self.configure(fg_color=BG)
@@ -640,12 +657,14 @@ class GameModeApp(ctk.CTk):
                 "Update failed", f"Could not write the new files:\n{exc}")
             return
         if getattr(sys, "frozen", False):
+            self._update_pending = True
             self._write_update_helper()
-            self._log("Update ready — close the app to finish updating")
+            self._log("Update ready — restarting to finish the update")
             messagebox.showinfo(
                 "Update ready",
-                "The new files are in place.\n\nClose GameMode VPN now: it "
-                "will rebuild itself and reopen on the new version.")
+                "The new files are in place.\n\nGameMode VPN will now "
+                "close, rebuild itself and reopen on the new version.")
+            self._on_close()
         else:
             self._log("Update ready — restart the app to use it")
             messagebox.showinfo(
@@ -940,6 +959,11 @@ class GameModeApp(ctk.CTk):
             return False
 
     def _on_window_close(self):
+        if self._update_pending:
+            # an update helper is waiting for this process to exit;
+            # hiding to the tray would stall it forever
+            self._on_close()
+            return
         if self._should_tray_hide() and self._ensure_tray():
             self.withdraw()
             if not self._tray_notice_shown:
