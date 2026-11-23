@@ -224,3 +224,14 @@ equivalence with the plain fnmatch matcher across the tricky
 cases (FiveM globs, case, disabled games, near-miss names)
 and checks the speed on 5,000 process names. All 23 rounds
 pass.
+
+## 2026-11-22 — v1.3.2 (off-cycle, at Ariya's direct request)
+
+One-click updates. The helper no longer waits politely for
+the app to close: its first move is taskkill — every running
+copy of GameModeVPN.exe dies at once — then a short capped
+loop verifies they are gone (a survivor is logged and the
+build proceeds anyway), then the build, copy-back and
+relaunch run as before. The app's guaranteed-exit timer drops
+from 3 s to 1 s. Test rounds 14, 16 and 20 updated for the
+kill-first helper; all 23 rounds pass.
