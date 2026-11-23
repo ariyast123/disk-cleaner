@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -1006,7 +1006,49 @@ class GameModeApp(ctk.CTk):
         self.destroy()
 
 
+_mutex_handle = None
+
+
+def _first_instance():
+    """True when this process is the only GameMode VPN instance.
+
+    Windows: a named mutex — a second launch sees ERROR_ALREADY_EXISTS
+    and backs off instead of stacking up another hidden copy (five
+    stacked instances once stalled the updater, which waits for every
+    GameModeVPN.exe process to exit before it may rebuild). Any failure,
+    and every non-Windows platform, means "proceed": the guard must
+    never be the reason the app does not open.
+    """
+    global _mutex_handle
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+
+        handle = ctypes.windll.kernel32.CreateMutexW(
+            None, False, "GameModeVPN-SingleInstance-7C5CFF"
+        )
+        if not handle:
+            return True
+        if ctypes.windll.kernel32.GetLastError() == 183:  # ALREADY_EXISTS
+            return False
+        _mutex_handle = handle  # keep it open for the process lifetime
+        return True
+    except Exception:
+        return True
+
+
 def main():
+    if not _first_instance():
+        root = ctk.CTk()
+        root.withdraw()
+        messagebox.showinfo(
+            "GameMode VPN",
+            "GameMode VPN is already running.\n"
+            "Look for its window or its icon in the system tray.",
+        )
+        root.destroy()
+        return
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     GameModeApp().mainloop()
