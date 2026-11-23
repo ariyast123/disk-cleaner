@@ -43,13 +43,23 @@ def test_helper_with_dist_launch():
     print("PASS helper is consistent when launched from dist")
 
 
+def test_helper_launch_has_a_console():
+    src = open(os.path.join(os.path.dirname(__file__), "..",
+                            "gamemode_vpn_app.py"),
+               encoding="utf-8").read()
+    assert "CREATE_NEW_CONSOLE" in src
+    assert '"DETACHED_PROCESS"' not in src
+    print("PASS helper launches with its own console window")
+
+
 def test_version_is_130():
-    assert gui.VERSION == "1.3.3"
-    print("PASS app version is 1.3.3")
+    assert gui.VERSION == "1.3.4"
+    print("PASS app version is 1.3.4")
 
 
 if __name__ == "__main__":
     test_helper_waits_builds_and_copies_back()
     test_helper_with_dist_launch()
+    test_helper_launch_has_a_console()
     test_version_is_130()
     print("ROUND 14: ALL PASS")
