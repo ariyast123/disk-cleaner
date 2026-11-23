@@ -19,20 +19,23 @@ def test_helper_lines():
     assert 'cd /d "C:\\Users\\ariyast\\HeatWatchApp"' in lines[2]
     assert "update started" in body and "> update_build.log" in body
     assert ":waitloop" in lines and "goto allclosed" in body
-    assert "if %WAITS% GEQ 15 goto forceclose" in body
+    assert "if %WAITS% GEQ 10 goto proceed" in body
     assert 'taskkill /F /IM HeatWatch.exe' in body
+    # kill-first: every copy dies before any waiting or building
+    assert body.index("taskkill /F /IM HeatWatch.exe") < \
+        body.index("call build.bat")
     assert "call build.bat auto >> update_build.log 2>&1" in body
     assert "copy /Y" in body and "%BUILT%" in body and "%LAUNCHED%" in body
     assert 'start "" "%LAUNCHED%"' in body
     # narrated on the console too — no more silent black window
-    assert "echo HeatWatch update: waiting for the app to close..." in body
+    assert "echo HeatWatch update: closing any running copies..." in body
     assert "echo HeatWatch update: building" in body
-    print("PASS helper: capped wait, narration, log, copy-back, relaunch")
+    print("PASS helper: kill-first, narration, log, copy-back, relaunch")
 
 
 def test_version_is_1_1_0():
-    assert gui.VERSION == "1.2.1"
-    print("PASS app version is 1.2.1")
+    assert gui.VERSION == "1.2.2"
+    print("PASS app version is 1.2.2")
 
 
 def test_startup_command():
