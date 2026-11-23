@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -189,34 +189,36 @@ def apply_update_files(project_dir, files):
 
 
 def update_helper_lines(project, launched_exe):
-    """finish_update.bat: wait (capped ~30 s) for this app to exit,
-    rebuild, copy the fresh exe over the launched one (so pinned
-    shortcuts update in place) and relaunch. Every phase is echoed
-    to the console AND update_build.log — a silent black window
-    once made working updates look stuck."""
+    """finish_update.bat, kill-first design (Ariya's request,
+    Nov 22, 2026): the helper does NOT wait politely for the app
+    to close. Its first move is taskkill — every running copy of
+    HeatWatch.exe dies at once (the app that requested the update has
+    already exited itself; any other copy is a stale duplicate).
+    A short capped loop then verifies they are gone; a copy that
+    somehow survives is logged and the build proceeds anyway.
+    Then: rebuild with build.bat auto, copy the fresh exe back
+    over the launched one (so pinned shortcuts update in place)
+    and relaunch. Every phase is echoed to the console AND
+    update_build.log."""
     built = os.path.join(project, "dist", "HeatWatch.exe")
     lines = [
         "@echo off",
         "title HeatWatch update",
         f'cd /d "{project}"',
-        "echo [helper] update started - waiting for HeatWatch "
-        "to close > update_build.log",
-        "echo HeatWatch update: waiting for the app to close...",
+        "echo [helper] update started > update_build.log",
+        "echo HeatWatch update: closing any running copies...",
+        "taskkill /F /IM HeatWatch.exe >> update_build.log 2>&1",
         "set /a WAITS=0",
         ":waitloop",
         'tasklist /FI "IMAGENAME eq HeatWatch.exe" 2>NUL | '
         'find /I "HeatWatch.exe" >NUL',
         "if errorlevel 1 goto allclosed",
         "set /a WAITS+=1",
-        "if %WAITS% GEQ 15 goto forceclose",
-        "timeout /t 2 /nobreak >NUL",
+        "if %WAITS% GEQ 10 goto proceed",
+        "timeout /t 1 /nobreak >NUL",
         "goto waitloop",
-        ":forceclose",
-        "echo [helper] copies still running after 30s - "
-        "closing them >> update_build.log",
-        "echo HeatWatch update: copies still open after 30s - closing them...",
-        'taskkill /F /IM HeatWatch.exe >NUL 2>&1',
-        "timeout /t 2 /nobreak >NUL",
+        ":proceed",
+        "echo [helper] a copy is still running - continuing anyway >> update_build.log",
         ":allclosed",
         "echo [helper] building >> update_build.log",
         "echo HeatWatch update: building (1-2 minutes, details in update_build.log)...",
@@ -1300,7 +1302,7 @@ class HeatWatchApp(ctk.CTk):
             # No modal dialog on this path (one unseen OK button
             # once stalled GameMode's whole update), and a timer
             # guarantees the exit the helper is waiting for.
-            threading.Timer(3.0, os._exit, args=(0,)).start()
+            threading.Timer(1.0, os._exit, args=(0,)).start()
             self._on_close()
         else:
             self._log("Update ready — restart the app to use it")
