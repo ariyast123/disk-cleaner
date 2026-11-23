@@ -21,6 +21,7 @@ machine and the matchers take plain data, so tests inject fakes.
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -232,16 +233,30 @@ def save_settings(settings, path=None):
 # Game process matching
 # ---------------------------------------------------------------------------
 
+_pattern_cache = {}
+
+
+def _compiled_pattern(pattern):
+    """fnmatch.translate + re.compile, cached per pattern string."""
+    regex = _pattern_cache.get(pattern)
+    if regex is None:
+        regex = re.compile(fnmatch.translate(pattern))
+        if len(_pattern_cache) > 512:
+            _pattern_cache.clear()
+        _pattern_cache[pattern] = regex
+    return regex
+
+
 def match_games(process_names, games):
     """Return the set of enabled game names whose patterns match a process."""
-    lowered = [str(p).lower() for p in process_names if p]
+    lowered = {str(p).lower() for p in process_names if p}
     running = set()
     for game in games:
         if not game.get("enabled", True):
             continue
         for pattern in game.get("patterns", []):
-            pat = str(pattern).lower()
-            if any(fnmatch.fnmatchcase(name, pat) for name in lowered):
+            regex = _compiled_pattern(str(pattern).lower())
+            if any(regex.match(name) for name in lowered):
                 running.add(game["name"])
                 break
     return running
