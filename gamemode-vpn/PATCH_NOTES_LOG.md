@@ -78,3 +78,21 @@ the kill switch is in play and shortens the guided steps when it
 is not. Published off-cycle by the web instance; the daily baton
 was intentionally left untouched, so the scheduled alternation
 continues as planned.
+
+## 2026-11-22 — v1.2.4 (off-cycle hotfix)
+
+Single-instance guard. Root cause of the stalled v1.2.3 update on
+Ariya's PC: five GameModeVPN instances were running at once (some
+hidden in the tray from earlier launches — every launch opened a
+fresh copy, nothing stopped it), and the updater's helper waits for
+every GameModeVPN.exe to exit before rebuilding, so it waited
+forever with no visible sign. The app now takes a named Windows
+mutex at startup (GameModeVPN-SingleInstance-7C5CFF); a second
+launch shows "already running — check the window or tray" and
+exits. The guard fails open on any error and on non-Windows
+platforms, so it can never be the reason the app does not open.
+New test round 15 covers: non-Windows proceeds, first instance
+proceeds, ERROR_ALREADY_EXISTS refuses, NULL handle and ctypes
+exceptions fail open. 15 rounds all pass, pyflakes clean.
+Published off-cycle by the web instance; the baton was left
+untouched.
