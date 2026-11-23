@@ -46,6 +46,27 @@ switched off; custom games can be added with their process names.
 - If a game was running while Proton was off, no restore is nagged —
   restore prompts only appear when the VPN was on before the session.
 
+## Auto mode and tray (v1.2.0)
+
+**Auto mode** (Settings, on by default) clicks Proton's own
+Disconnect / Connect buttons through Windows UI Automation — the
+accessibility layer — and then verifies the result against the live
+connection state, like always. If a button is ever not found (say
+Proton renames it), the guided step panel takes over automatically;
+auto mode is an accelerator, never a single point of failure. This
+is also why the app never force-closes Proton: Proton's tunnel is
+held by its Windows service, so closing the app window would not
+disconnect anything anyway.
+
+**Minimize to tray** (Settings, on by default): closing the window
+hides GameMode to the system tray, still watching. Double-click the
+tray icon to reopen; right-click it to quit for real.
+
+The app also **learns the kill switch**: a session that passes
+through the blocked state proves it is on; a protected session that
+goes bare without blocking proves it is off, and the guided steps
+shorten to the plain Disconnect / Connect pair.
+
 ## Updates
 
 GameMode updates itself through GitHub, like Disk Cleaner: on
