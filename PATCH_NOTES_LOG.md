@@ -19,3 +19,15 @@ the weekly digest job reads the last 7 days and posts them in chat
 - After a successful build, the fresh exe is copied back over the copy
   that was actually launched, so a pinned or standalone copy can never
   resurrect the old version.
+
+## 2026-11-22 — v1.2.0
+
+- One-click updates, at Ariya's request: the "close the app
+  yourself" dialog is gone. Clicking Update closes the app
+  itself (with a guaranteed-exit backstop), and the helper's
+  first move is now taskkill — every running copy is closed at
+  once — followed by a short gone-check, the build (logged to
+  update_build.log), the copy-back over the launched exe, and
+  the relaunch. No manual steps, no infinite wait loop.
+- New test round 6 covers the kill-first helper and the
+  self-closing update path. All 6 rounds pass.
