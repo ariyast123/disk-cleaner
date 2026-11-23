@@ -1,9 +1,10 @@
 """GameMode VPN — Proton auto-pilot for game nights (CustomTkinter UI).
 
-Watches for your games, walks you through the two clicks Proton's
-free plan cannot automate (kill switch off + disconnect before the
-game, reconnect + kill switch back to Advanced after it), and
-verifies every step live against your real connection state.
+Watches for your games and handles Proton VPN around each session.
+Auto mode clicks Proton's own Disconnect / Connect buttons through
+Windows UI Automation and verifies every result live against your
+real connection state; if a click is ever unavailable, a guided
+step panel takes over. Closing the window minimizes to the tray.
 
 Run:  python gamemode_vpn_app.py
 Build: build.bat  (PyInstaller one-file exe)
@@ -23,7 +24,15 @@ import customtkinter as ctk
 
 import gamemode_core as core
 
-VERSION = "1.1.0"
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+    TRAY_AVAILABLE = True
+except Exception:  # tray is an enhancement, never a requirement
+    pystray = None
+    TRAY_AVAILABLE = False
+
+VERSION = "1.2.0"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -73,6 +82,15 @@ def fmt_duration(seconds):
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes:02d}:{secs:02d}"
+
+
+def _tray_image():
+    """The tray icon: a violet ring with a cyan core, like the orb."""
+    image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse([5, 5, 59, 59], outline=(124, 92, 255, 255), width=4)
+    draw.ellipse([21, 21, 43, 43], fill=(34, 211, 238, 255))
+    return image
 
 
 def project_folder():
@@ -141,6 +159,10 @@ class GameModeApp(ctk.CTk):
         self._games_signature = None
         self._launched_session = None
         self.manual_restore = False
+        self._auto_marks = {}       # auto action -> marker already attempted
+        self._restore_seq = 0
+        self._tray_icon = None
+        self._tray_notice_shown = False
         self._pulse_phase = False
         self._log_lines = []
 
@@ -162,7 +184,7 @@ class GameModeApp(ctk.CTk):
         self.after(120, self._drain_queue)
         self.after(500, self._tick)
         self.after(700, self._maybe_show_whats_new)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
     # ------------------------------------------------------------------
     # Layout
@@ -319,6 +341,16 @@ class GameModeApp(ctk.CTk):
                       variable=self.auto_launch_var, progress_color=VIOLET,
                       font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT,
                       command=self._save_toggles).pack(anchor="w", padx=18, pady=5)
+        self.auto_mode_var = tk.BooleanVar(value=bool(self.settings["auto_mode"]))
+        ctk.CTkSwitch(settings_card, text="Auto mode — click Proton's buttons for me",
+                      variable=self.auto_mode_var, progress_color=VIOLET,
+                      font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT,
+                      command=self._save_toggles).pack(anchor="w", padx=18, pady=5)
+        self.tray_var = tk.BooleanVar(value=bool(self.settings["minimize_to_tray"]))
+        ctk.CTkSwitch(settings_card, text="Minimize to tray when closing the window",
+                      variable=self.tray_var, progress_color=VIOLET,
+                      font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT,
+                      command=self._save_toggles).pack(anchor="w", padx=18, pady=5)
         self.start_win_var = tk.BooleanVar(value=bool(self.settings["start_with_windows"]))
         ctk.CTkSwitch(settings_card, text="Start with Windows",
                       variable=self.start_win_var, progress_color=VIOLET,
@@ -447,6 +479,8 @@ class GameModeApp(ctk.CTk):
 
     def _save_toggles(self):
         self.settings["auto_launch_proton"] = bool(self.auto_launch_var.get())
+        self.settings["auto_mode"] = bool(self.auto_mode_var.get())
+        self.settings["minimize_to_tray"] = bool(self.tray_var.get())
         want_start = bool(self.start_win_var.get())
         if want_start != bool(self.settings["start_with_windows"]):
             self.settings["start_with_windows"] = want_start
@@ -478,8 +512,8 @@ class GameModeApp(ctk.CTk):
 
     def _browse_proton(self):
         path = filedialog.askopenfilename(
-            title="Find ProtonVPN.exe",
-            filetypes=[("Proton VPN", "ProtonVPN.exe"), ("Executables", "*.exe")])
+            title="Find the Proton app (ProtonVPN.Client.exe)",
+            filetypes=[("Executables", "*.exe"), ("All files", "*.*")])
         if path:
             self.settings["proton_path"] = path
             core.save_settings(self.settings)
@@ -492,7 +526,7 @@ class GameModeApp(ctk.CTk):
             self.proton_path_label.configure(text=found, text_color=TEXT)
         else:
             self.proton_path_label.configure(
-                text="Not found — Browse to ProtonVPN.exe", text_color=AMBER)
+                text="Not found — Browse to ProtonVPN.Client.exe", text_color=AMBER)
 
     # ------------------------------------------------------------------
     # Actions
@@ -513,6 +547,7 @@ class GameModeApp(ctk.CTk):
         self.manual_restore = True
         self._steps_signature = None
         self._open_proton()
+        self._maybe_auto("connect", ("manual", int(time.time())))
         self._refresh_status()
 
     # ------------------------------------------------------------------
@@ -666,6 +701,12 @@ class GameModeApp(ctk.CTk):
                     self._show_update_banner(item[1])
                 elif item[0] == "update_downloaded":
                     self._update_downloaded(item[1])
+                elif item[0] == "auto_result":
+                    self._auto_result(item[1], item[2], item[3])
+                elif item[0] == "tray_show":
+                    self._show_from_tray()
+                elif item[0] == "tray_quit":
+                    self._on_close()
         except queue.Empty:
             pass
         self.after(120, self._drain_queue)
@@ -674,6 +715,13 @@ class GameModeApp(ctk.CTk):
         events = self.engine.update(running, state)
         for event in events:
             self._handle_event(event)
+        learned = self.engine.ks_seen
+        if learned is not None and self.settings.get("kill_switch_seen") != learned:
+            self.settings["kill_switch_seen"] = learned
+            core.save_settings(self.settings)
+            self._log("Kill switch " + (
+                "detected — the steps include it" if learned
+                else "not in play — steps shortened"))
         if self.manual_restore and state == "protected":
             self.manual_restore = False
             self._log("Protected again — routine complete")
@@ -691,20 +739,52 @@ class GameModeApp(ctk.CTk):
             self._log("Proton is still on — follow the steps to go bare")
             if self.settings["auto_launch_proton"]:
                 self._launch_once_for_session()
+            self._maybe_auto("disconnect", self.engine.session_start)
         elif event == "blocked_midway":
             self._log("Kill switch is still ON — internet blocked (expected mid-step)")
         elif event == "game_mode_on":
             self._log("GAME MODE ON — you are bare, good to play")
+            self._auto_marks.pop("disconnect", None)
         elif event == "game_ended":
             self._log("Game closed")
             self._launched_session = None
+            self._auto_marks.pop("disconnect", None)
         elif event == "restore_needed":
+            self._restore_seq += 1
             self._log("Session over — restore your VPN (steps above)")
             if self.settings["auto_launch_proton"]:
                 self._launch_once_for_session()
+            self._maybe_auto("connect", ("restore", self._restore_seq))
         elif event == "protected_restored":
             self.manual_restore = False
+            self._auto_marks.pop("connect", None)
             self._log("Protected again — routine complete")
+
+    # ------------------------------------------------------------------
+    # Auto mode: click Proton's buttons via UI Automation (core layer
+    # does the work; any failure leaves the guided steps in charge).
+    # ------------------------------------------------------------------
+
+    def _maybe_auto(self, action, marker):
+        if not self.settings.get("auto_mode", True):
+            return
+        if self._auto_marks.get(action) == marker:
+            return
+        self._auto_marks[action] = marker
+        self._log(f"Auto mode: asking Proton to {action}…")
+
+        def worker():
+            core.launch_proton(self.settings)
+            ok, detail = core.auto_proton_action(action)
+            self.msg_queue.put(("auto_result", action, ok, detail))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _auto_result(self, action, ok, detail):
+        if ok:
+            self._log(f"Auto mode: {detail} — verifying…")
+        else:
+            self._log(f"Auto mode could not {action} ({detail}) — the steps above still work")
 
     def _launch_once_for_session(self):
         marker = self.engine.session_start or "restore"
@@ -816,7 +896,65 @@ class GameModeApp(ctk.CTk):
         self.log_box.insert("end", "\n".join(self._log_lines))
         self.log_box.configure(state="disabled")
 
+    # ------------------------------------------------------------------
+    # Tray: closing the window hides the app; the watcher keeps
+    # running. Quit lives in the tray menu (and closing quits as
+    # usual when the tray toggle is off or the tray is unavailable).
+    # ------------------------------------------------------------------
+
+    def _should_tray_hide(self):
+        return bool(self.settings.get("minimize_to_tray", True)) and TRAY_AVAILABLE
+
+    def _ensure_tray(self):
+        if self._tray_icon is not None:
+            return True
+        if not TRAY_AVAILABLE:
+            return False
+        try:
+            menu = pystray.Menu(
+                pystray.MenuItem("Open GameMode VPN",
+                                 lambda icon, item: self.msg_queue.put(("tray_show",)),
+                                 default=True),
+                pystray.MenuItem("Quit",
+                                 lambda icon, item: self.msg_queue.put(("tray_quit",))),
+            )
+            self._tray_icon = pystray.Icon("gamemode-vpn", _tray_image(), "GameMode VPN", menu)
+            self._tray_icon.run_detached()
+            return True
+        except Exception:
+            self._tray_icon = None
+            return False
+
+    def _on_window_close(self):
+        if self._should_tray_hide() and self._ensure_tray():
+            self.withdraw()
+            if not self._tray_notice_shown:
+                self._tray_notice_shown = True
+                try:
+                    self._tray_icon.notify(
+                        "Still watching for games. Right-click the tray icon "
+                        "to open GameMode VPN or quit it.",
+                        "GameMode VPN is in the tray")
+                except Exception:
+                    pass
+            return
+        self._on_close()
+
+    def _show_from_tray(self):
+        try:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
     def _on_close(self):
+        if self._tray_icon is not None:
+            try:
+                self._tray_icon.stop()
+            except Exception:
+                pass
+            self._tray_icon = None
         self._stop.set()
         self.destroy()
 
