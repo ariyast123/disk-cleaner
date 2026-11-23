@@ -11,6 +11,19 @@ startup, offers one-click updates, and shows a What's New window
 after each update. Daily updates alternate between Ariya's two
 Muse instances, opposite to Disk Cleaner's turns.
 
+## 2026-11-22 — v1.2.1 (off-cycle hotfix)
+
+Updater fix, reported by Ariya the same evening: after updating,
+reopening the app from his taskbar pin brought back the old
+version, which offered the same update again. Cause: the updater
+rebuilt and relaunched only the dist copy, while the pin pointed
+at a standalone copy elsewhere that stayed old. finish_update.bat
+now copies the freshly built exe back over the launched exe's
+path before relaunching it, so any shortcut that started the app
+gets the new version too. (One-time note: a pin still pointing at
+a pre-1.2.1 copy has to be aimed at the dist exe once; from then
+on updates self-replace in place.)
+
 ## 2026-11-22 — v1.2.0 (off-cycle, at Ariya's direct request)
 
 Auto mode: GameMode now clicks Proton's own Disconnect and Connect
