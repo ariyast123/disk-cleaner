@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -253,6 +253,13 @@ def fmt_temp(value):
     return f"{value:.0f}°C"
 
 
+def gauge_fraction(value, top=110.0):
+    """How full a temperature gauge bar is (0..1)."""
+    if value is None:
+        return 0.0
+    return max(0.0, min(1.0, float(value) / float(top)))
+
+
 def fmt_duration(seconds):
     seconds = int(seconds or 0)
     hours, rem = divmod(seconds, 3600)
@@ -302,6 +309,8 @@ class HeatWatchApp(ctk.CTk):
         self.warner = core.HeatWarner(self.settings["warn_cpu_c"])
         self.history = core.load_history()
         self.latest = {"cpu": None, "gpu": None, "source": "none"}
+        self.buffer = core.SampleBuffer(capacity=120)
+        self._orb_phase = False
         self.update_info = None
         self._update_pending = False
         self._hidden_in_tray = False
@@ -330,6 +339,7 @@ class HeatWatchApp(ctk.CTk):
         threading.Thread(target=self._check_update_worker,
                          daemon=True).start()
         self.after(150, self._drain_queue)
+        self.after(700, self._pulse_orb)
         if not start_minimized:
             self._maybe_show_whats_new()
 
@@ -360,7 +370,12 @@ class HeatWatchApp(ctk.CTk):
             sidebar, text="Temperature source: looking…",
             font=ctk.CTkFont(size=12), text_color=MUTED,
             wraplength=260, justify="left", anchor="w")
-        self.source_label.pack(anchor="w", padx=20, pady=(0, 10))
+        self.source_label.pack(anchor="w", padx=20, pady=(0, 6))
+
+        self.orb = tk.Canvas(sidebar, width=76, height=76,
+                             bg=SIDEBAR, highlightthickness=0)
+        self.orb.pack(anchor="w", padx=20, pady=(0, 8))
+        self._draw_orb()
 
         cpu_card = ctk.CTkFrame(sidebar, fg_color=CARD, corner_radius=12)
         cpu_card.pack(fill="x", padx=16, pady=(4, 8))
@@ -371,6 +386,11 @@ class HeatWatchApp(ctk.CTk):
             cpu_card, text="—", font=ctk.CTkFont(size=40, weight="bold"),
             text_color=FAINT)
         self.cpu_value.pack(anchor="w", padx=14, pady=(0, 2))
+        self.cpu_gauge = ctk.CTkProgressBar(
+            cpu_card, height=8, corner_radius=4, fg_color=PANEL,
+            progress_color=GREEN)
+        self.cpu_gauge.set(0)
+        self.cpu_gauge.pack(fill="x", padx=14, pady=(2, 2))
         self.cpu_warn_label = ctk.CTkLabel(
             cpu_card, text="", font=ctk.CTkFont(size=11),
             text_color=FAINT)
@@ -384,7 +404,12 @@ class HeatWatchApp(ctk.CTk):
         self.gpu_value = ctk.CTkLabel(
             gpu_card, text="—", font=ctk.CTkFont(size=40, weight="bold"),
             text_color=FAINT)
-        self.gpu_value.pack(anchor="w", padx=14, pady=(0, 10))
+        self.gpu_value.pack(anchor="w", padx=14, pady=(0, 2))
+        self.gpu_gauge = ctk.CTkProgressBar(
+            gpu_card, height=8, corner_radius=4, fg_color=PANEL,
+            progress_color=GREEN)
+        self.gpu_gauge.set(0)
+        self.gpu_gauge.pack(fill="x", padx=14, pady=(2, 10))
 
         verdict_card = ctk.CTkFrame(sidebar, fg_color=CARD,
                                     corner_radius=12)
@@ -447,10 +472,25 @@ class HeatWatchApp(ctk.CTk):
             wraplength=640, justify="left", anchor="w")
         self.session_detail.pack(anchor="w", padx=16, pady=(2, 12))
 
+        graph_card = ctk.CTkFrame(main, fg_color=PANEL,
+                                  border_color=PANEL_EDGE,
+                                  border_width=1, corner_radius=14)
+        graph_card.grid(row=2, column=0, sticky="ew", padx=18,
+                        pady=(0, 10))
+        ctk.CTkLabel(graph_card, text="LAST MINUTES — CPU (orange) "
+                                      "• GPU (cyan) • dashed = CPU "
+                                      "warning line",
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=MUTED).pack(anchor="w", padx=16,
+                                            pady=(12, 4))
+        self.spark = tk.Canvas(graph_card, height=96, bg="#0D1020",
+                               highlightthickness=0)
+        self.spark.pack(fill="x", padx=16, pady=(0, 12))
+
         history_card = ctk.CTkFrame(main, fg_color=PANEL,
                                     border_color=PANEL_EDGE,
                                     border_width=1, corner_radius=14)
-        history_card.grid(row=2, column=0, sticky="ew", padx=18,
+        history_card.grid(row=3, column=0, sticky="ew", padx=18,
                           pady=(0, 10))
         ctk.CTkLabel(history_card, text="SESSION HISTORY",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -463,7 +503,7 @@ class HeatWatchApp(ctk.CTk):
         games_card = ctk.CTkFrame(main, fg_color=PANEL,
                                   border_color=PANEL_EDGE,
                                   border_width=1, corner_radius=14)
-        games_card.grid(row=3, column=0, sticky="ew", padx=18,
+        games_card.grid(row=4, column=0, sticky="ew", padx=18,
                         pady=(0, 10))
         ctk.CTkLabel(games_card, text="WATCHED GAMES",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -477,7 +517,7 @@ class HeatWatchApp(ctk.CTk):
         settings_card = ctk.CTkFrame(main, fg_color=PANEL,
                                      border_color=PANEL_EDGE,
                                      border_width=1, corner_radius=14)
-        settings_card.grid(row=4, column=0, sticky="ew", padx=18,
+        settings_card.grid(row=5, column=0, sticky="ew", padx=18,
                            pady=(0, 10))
         ctk.CTkLabel(settings_card, text="SETTINGS",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -518,7 +558,7 @@ class HeatWatchApp(ctk.CTk):
         log_card = ctk.CTkFrame(main, fg_color=PANEL,
                                 border_color=PANEL_EDGE,
                                 border_width=1, corner_radius=14)
-        log_card.grid(row=5, column=0, sticky="ew", padx=18,
+        log_card.grid(row=6, column=0, sticky="ew", padx=18,
                       pady=(0, 16))
         ctk.CTkLabel(log_card, text="ACTIVITY",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -626,6 +666,15 @@ class HeatWatchApp(ctk.CTk):
         self.gpu_value.configure(
             text=fmt_temp(temps["gpu"]),
             text_color=temp_color(temps["gpu"], warn_gpu))
+        self.cpu_gauge.configure(
+            progress_color=temp_color(temps["cpu"], warn_cpu))
+        self.cpu_gauge.set(gauge_fraction(temps["cpu"]))
+        self.gpu_gauge.configure(
+            progress_color=temp_color(temps["gpu"], warn_gpu))
+        self.gpu_gauge.set(gauge_fraction(temps["gpu"]))
+        self.buffer.push(payload["now"], temps["cpu"], temps["gpu"])
+        self._draw_sparkline()
+        self._draw_orb()
         self.cpu_warn_label.configure(
             text=f"warning at {warn_cpu}°C")
         source = temps["source"]
@@ -661,11 +710,16 @@ class HeatWatchApp(ctk.CTk):
                 "HeatWatch warning")
         current = self.tracker.current()
         if current is None:
+            self.session_card.configure(border_color=PANEL_EDGE)
             self.session_title.configure(text="No game running")
             self.session_detail.configure(
                 text="Temperatures are still being watched — a "
                      "session starts when a watched game opens.")
         else:
+            hot = (temps["cpu"] is not None
+                   and temps["cpu"] >= warn_cpu)
+            self.session_card.configure(
+                border_color=RED if hot else VIOLET)
             elapsed = payload["now"] - current["start"]
             self.session_title.configure(
                 text=f"{current['game']} — {fmt_duration(elapsed)}")
@@ -675,6 +729,67 @@ class HeatWatchApp(ctk.CTk):
                      f"Over the line: CPU "
                      f"{fmt_duration(current['sec_above_cpu'])}, GPU "
                      f"{fmt_duration(current['sec_above_gpu'])}")
+
+    # -- Live visuals -----------------------------------------------------------
+
+    def _orb_state(self):
+        """(ring, core) colors for the status orb."""
+        cpu = self.latest.get("cpu")
+        warn = self.settings["warn_cpu_c"]
+        if cpu is None:
+            return FAINT, PANEL
+        if cpu >= warn:
+            return RED, RED if self._orb_phase else "#7F1D1D"
+        if self.tracker.current() is not None:
+            return CYAN, ORANGE
+        if cpu >= warn - 15:
+            return AMBER, PANEL
+        return GREEN, PANEL
+
+    def _draw_orb(self):
+        if not hasattr(self, "orb"):
+            return
+        ring, core_fill = self._orb_state()
+        self.orb.delete("all")
+        self.orb.create_oval(6, 6, 70, 70, outline=ring, width=4)
+        self.orb.create_oval(26, 26, 50, 50, fill=core_fill,
+                             outline="")
+
+    def _pulse_orb(self):
+        self._orb_phase = not self._orb_phase
+        cpu = self.latest.get("cpu")
+        if cpu is not None and cpu >= self.settings["warn_cpu_c"]:
+            self._draw_orb()
+        if not self._stop.is_set():
+            self.after(700, self._pulse_orb)
+
+    def _draw_sparkline(self):
+        if not hasattr(self, "spark"):
+            return
+        canvas = self.spark
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 200)
+        height = 96
+        vmin, vmax = 30.0, 110.0
+        warn = self.settings["warn_cpu_c"]
+        warn_y = height - (warn - vmin) / (vmax - vmin) * height
+        canvas.create_line(0, warn_y, width, warn_y, fill=RED,
+                           dash=(4, 4))
+        for series, color in ((self.buffer.gpu_series(), CYAN),
+                              (self.buffer.cpu_series(), ORANGE)):
+            points = core.scale_series(series, width - 8, height - 12,
+                                       vmin, vmax)
+            if len(points) >= 2:
+                flat = []
+                for x, y in points:
+                    flat.extend((x + 4, y + 6))
+                canvas.create_line(*flat, fill=color, width=2,
+                                   smooth=True)
+        if len(self.buffer) < 2:
+            canvas.create_text(
+                width / 2, height / 2,
+                text="Collecting temperatures…",
+                fill=FAINT, font=("Segoe UI", 10))
 
     def _refresh_history(self):
         for child in self.history_frame.winfo_children():
@@ -697,6 +812,12 @@ class HeatWatchApp(ctk.CTk):
                     f"peak GPU {fmt_temp(record.get('peak_gpu'))}  •  "
                     f"over line "
                     f"{fmt_duration(record.get('sec_above_cpu'))}")
+            dot_color = temp_color(record.get("peak_cpu"),
+                                   record.get("warn_cpu") or 95)
+            ctk.CTkLabel(row, text="●",
+                         font=ctk.CTkFont(size=12),
+                         text_color=dot_color).pack(side="left",
+                                                    padx=(4, 0))
             ctk.CTkLabel(row, text=text,
                          font=ctk.CTkFont(size=12),
                          text_color=TEXT).pack(side="left", padx=4)
