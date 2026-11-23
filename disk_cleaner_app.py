@@ -95,7 +95,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -173,6 +173,40 @@ def project_folder():
     """The folder holding the .py sources and build.bat: when the exe
     sits in dist, that is the folder above it."""
     return own_folders()[-1]
+
+
+def update_helper_lines(project, launched_exe):
+    """The finish_update.bat body: wait for DiskCleaner.exe to exit,
+    rebuild with `build.bat auto` (no pause - nobody is there to press
+    a key) logging the build to update_build.log, then copy the fresh
+    exe back over the copy that was actually launched (a taskbar pin
+    may point at a standalone copy outside dist) and relaunch THAT
+    path - so a pinned shortcut can never resurrect an old version
+    after an update. If the build failed, the old launched copy is
+    relaunched instead of nothing."""
+    built = os.path.join(project, "dist", "DiskCleaner.exe")
+    return [
+        "@echo off",
+        "title Disk Cleaner update",
+        ":waitloop",
+        'tasklist /FI "IMAGENAME eq DiskCleaner.exe" 2>NUL | '
+        'find /I "DiskCleaner.exe" >NUL',
+        "if not errorlevel 1 (",
+        "  timeout /t 2 /nobreak >NUL",
+        "  goto waitloop",
+        ")",
+        f'cd /d "{project}"',
+        "call build.bat auto > update_build.log 2>&1",
+        f'set "BUILT={built}"',
+        f'set "LAUNCHED={launched_exe}"',
+        'if exist "%BUILT%" (',
+        '  if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL',
+        '  start "" "%LAUNCHED%"',
+        ") else (",
+        '  if exist "%LAUNCHED%" start "" "%LAUNCHED%"',
+        ")",
+        "",
+    ]
 
 
 class DiskCleanerApp(ctk.CTk):
@@ -305,22 +339,7 @@ class DiskCleanerApp(ctk.CTk):
         this app to exit, rebuilds the exe and relaunches it."""
         project = project_folder()
         helper = os.path.join(project, "finish_update.bat")
-        exe = os.path.join(project, "dist", "DiskCleaner.exe")
-        lines = [
-            "@echo off",
-            "title Disk Cleaner update",
-            ":waitloop",
-            'tasklist /FI "IMAGENAME eq DiskCleaner.exe" 2>NUL | '
-            'find /I "DiskCleaner.exe" >NUL',
-            "if not errorlevel 1 (",
-            "  timeout /t 2 /nobreak >NUL",
-            "  goto waitloop",
-            ")",
-            f'cd /d "{project}"',
-            "call build.bat",
-            f'if exist "{exe}" start "" "{exe}"',
-            "",
-        ]
+        lines = update_helper_lines(project, sys.executable)
         with open(helper, "w", encoding="ascii") as fh:
             fh.write("\r\n".join(lines))
         subprocess.Popen(
