@@ -23,9 +23,10 @@ its own independent baton, starting at "web".
    uses full-length sessions (>= 10 min) only, and a missing
    temperature source must stay visible as "none", never
    silently filled with guesses.
-4. Run the FULL test suite (12 rounds in `heatwatch/tests/`;
-   GUI rounds 8 and 11 under xvfb-run with tests/venv). Publish
-   nothing on a failing day — revert and report honestly.
+4. Run the FULL test suite (every round in `heatwatch/tests/`;
+   GUI rounds 8, 11 and 15 under xvfb-run with tests/venv).
+   Publish nothing on a failing day — revert and report
+   honestly.
 5. Publish order: changed source files -> tests ->
    PATCH_NOTES_LOG.md -> ROADMAP.md -> version.json ->
    NEXT_TURN.txt flipped to the other side, LAST.
