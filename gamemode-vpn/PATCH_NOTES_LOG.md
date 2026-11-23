@@ -212,3 +212,15 @@ load-bearing. Covered by new test rounds 21 (engine records +
 storage, including corrupt-file tolerance and the 50-entry cap)
 and 22 (GUI: empty message, session appears after the game ends,
 history survives a restart). All 22 rounds pass, pyflakes clean.
+
+## 2026-11-22 — v1.3.1 (off-cycle, at Ariya's direct request)
+
+Optimization pass, no features changed. The game matcher no
+longer re-translates every glob pattern on every 2-second
+tick: patterns are compiled once and cached, and the
+process-name set is built once per tick. Matching results are
+byte-for-byte the same as before — new test round 23 proves
+equivalence with the plain fnmatch matcher across the tricky
+cases (FiveM globs, case, disabled games, near-miss names)
+and checks the speed on 5,000 process names. All 23 rounds
+pass.
