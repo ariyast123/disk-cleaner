@@ -46,3 +46,14 @@ verdict's color. The live graph labels the current CPU and
 GPU values at its right edge. New test round 16 covers the
 header, chips, dots, labels and verdict border; all 16
 rounds pass.
+
+## 2026-11-22 — v1.2.1 (off-cycle, at Ariya's direct request)
+
+Optimization pass, no features changed. The WMI temperature
+route spawns PowerShell — the most expensive probe HeatWatch
+makes. When it comes back empty (LibreHardwareMonitor not
+running), the app now remembers the miss for 60 seconds
+instead of paying that spawn on every 3-second poll; a
+successful WMI read clears the miss immediately, and all
+merge results and source labels are exactly as before. New
+test round 17 covers the cache; all 17 rounds pass.
