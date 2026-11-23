@@ -390,12 +390,34 @@ class _PywinautoBackend:
             time.sleep(0.5)
 
     def buttons(self, window):
+        """(name, control, control_type) for every named control in
+        the window: real Buttons first, then everything else —
+        Proton's Avalonia tree does not always expose its buttons
+        with the Button control type."""
         found = []
-        for ctrl in window.descendants(control_type="Button"):
-            try:
-                found.append((ctrl.window_text() or "", ctrl))
-            except Exception:
-                continue
+        seen_ids = set()
+
+        def collect(controls):
+            for ctrl in controls:
+                try:
+                    if id(ctrl) in seen_ids:
+                        continue
+                    seen_ids.add(id(ctrl))
+                    name = ctrl.window_text() or ""
+                    if name.strip():
+                        ctype = ctrl.element_info.control_type or ""
+                        found.append((name, ctrl, ctype))
+                except Exception:
+                    continue
+
+        try:
+            collect(window.descendants(control_type="Button"))
+        except Exception:
+            pass
+        try:
+            collect(window.descendants())
+        except Exception:
+            pass
         return found
 
     def invoke(self, control):
@@ -406,22 +428,34 @@ class _PywinautoBackend:
 
 
 def _pick_button(buttons, wanted_names):
-    """Exact (case-insensitive) name match wins; 'Connect' must never
-    match the 'Disconnect' button, so substring matching is banned."""
-    cleaned = [(name.strip(), ctrl) for name, ctrl in buttons if name and name.strip()]
+    """Exact (case-insensitive) name match wins — 'Connect' must
+    never match the 'Disconnect' button, so substring matching is
+    banned. Controls of type Button are preferred; any other type
+    with the exact name is accepted as a fallback, because Proton's
+    Avalonia tree does not always type its buttons as Buttons."""
+    cleaned = [(name.strip(), ctrl, ctype) for name, ctrl, ctype in buttons
+               if name and name.strip()]
     for wanted in wanted_names:
-        for name, ctrl in cleaned:
+        for name, ctrl, ctype in cleaned:
+            if name.lower() == wanted.lower() and ctype == "Button":
+                return name, ctrl
+    for wanted in wanted_names:
+        for name, ctrl, ctype in cleaned:
             if name.lower() == wanted.lower():
                 return name, ctrl
     return None, None
 
 
-def auto_proton_action(action, backend=None, timeout=12.0):
+def auto_proton_action(action, backend=None, timeout=15.0):
     """Click Proton's own button for `action` ('disconnect'/'connect').
 
-    Returns (ok, detail). ok=False always carries the reason, and the
-    caller falls back to the guided steps — auto mode is an
-    accelerator, never a single point of failure."""
+    The window and its controls are re-scanned until the timeout:
+    Proton may still be starting when the first scan runs, and its
+    button only appears once the UI has loaded. Returns
+    (ok, detail); ok=False always carries the reason — including
+    the control names that WERE seen — and the caller falls back
+    to the guided steps. Auto mode is an accelerator, never a
+    single point of failure."""
     wanted = AUTO_BUTTONS.get(action)
     if not wanted:
         return (False, f"unknown action {action!r}")
@@ -430,24 +464,41 @@ def auto_proton_action(action, backend=None, timeout=12.0):
             backend = _PywinautoBackend()
         except Exception as exc:
             return (False, f"auto control unavailable ({type(exc).__name__})")
-    try:
-        win = backend.window(timeout=timeout)
-    except Exception as exc:
-        return (False, f"could not reach Proton's window ({type(exc).__name__})")
-    if win is None:
+    deadline = time.monotonic() + timeout
+    win_seen = False
+    saw_names = []
+    while True:
+        try:
+            win = backend.window(timeout=2.0)
+        except Exception as exc:
+            return (False, f"could not reach Proton's window ({type(exc).__name__})")
+        if win is not None:
+            win_seen = True
+            try:
+                buttons = backend.buttons(win)
+            except Exception as exc:
+                return (False, f"could not read Proton's controls ({type(exc).__name__})")
+            names = [name.strip() for name, _ctrl, _ctype in buttons
+                     if name and name.strip()]
+            if names:
+                saw_names = names
+            name, ctrl = _pick_button(buttons, wanted)
+            if ctrl is not None:
+                try:
+                    backend.invoke(ctrl)
+                except Exception as exc:
+                    return (False, f"clicking {name} failed ({type(exc).__name__})")
+                return (True, f"clicked {name} in Proton")
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.7)
+    if not win_seen:
         return (False, "Proton's window was not found")
-    try:
-        buttons = backend.buttons(win)
-    except Exception as exc:
-        return (False, f"could not read Proton's controls ({type(exc).__name__})")
-    name, ctrl = _pick_button(buttons, wanted)
-    if ctrl is None:
-        return (False, f"the {wanted[0]} button was not found in Proton")
-    try:
-        backend.invoke(ctrl)
-    except Exception as exc:
-        return (False, f"clicking {name} failed ({type(exc).__name__})")
-    return (True, f"clicked {name} in Proton")
+    if saw_names:
+        shown = ", ".join(sorted(set(saw_names))[:12])
+        return (False, f"the {wanted[0]} button was not found in Proton (saw: {shown})")
+    return (False, f"the {wanted[0]} button was not found in Proton "
+                   "(no named controls were visible)")
 
 
 class SnapshotCache:
