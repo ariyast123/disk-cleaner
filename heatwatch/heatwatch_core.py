@@ -399,10 +399,24 @@ def fetch_nvidia_smi(timeout=4.0):
 # Merged sampling
 # ---------------------------------------------------------------------------
 
-def collect_temps(port=8085, readers=None):
+WMI_MISS_SECONDS = 60.0
+_wmi_miss_until = [0.0]
+
+
+def _reset_source_caches():
+    _wmi_miss_until[0] = 0.0
+
+
+def collect_temps(port=8085, readers=None, now=None):
     """One temperature sample from the best available sources.
 
     -> {"cpu": float|None, "gpu": float|None, "source": str}
+
+    The WMI route spawns PowerShell — by far the most expensive
+    probe. When it comes back empty (LibreHardwareMonitor is not
+    running), the miss is remembered for WMI_MISS_SECONDS so a
+    machine without LHM does not pay that spawn on every poll.
+    A WMI hit clears the miss immediately.
     """
     if readers is None:
         readers = {
@@ -410,6 +424,8 @@ def collect_temps(port=8085, readers=None):
             "wmi": fetch_lhm_wmi,
             "smi": fetch_nvidia_smi,
         }
+    if now is None:
+        now = time.time()
     cpu = gpu = None
     used = []
     web = readers["web"]()
@@ -418,15 +434,18 @@ def collect_temps(port=8085, readers=None):
         if cpu is not None or gpu is not None:
             used.append("LHM web")
     if cpu is None or gpu is None:
-        wmi = readers["wmi"]()
-        if wmi:
-            if cpu is None:
-                cpu = wmi.get("cpu")
-            if gpu is None:
-                gpu = wmi.get("gpu")
-            if wmi.get("cpu") is not None or wmi.get("gpu") is not None:
-                if "LHM WMI" not in used:
-                    used.append("LHM WMI")
+        if now >= _wmi_miss_until[0]:
+            wmi = readers["wmi"]()
+            if wmi and (wmi.get("cpu") is not None
+                        or wmi.get("gpu") is not None):
+                _wmi_miss_until[0] = 0.0
+                if cpu is None:
+                    cpu = wmi.get("cpu")
+                if gpu is None:
+                    gpu = wmi.get("gpu")
+                used.append("LHM WMI")
+            else:
+                _wmi_miss_until[0] = now + WMI_MISS_SECONDS
     if gpu is None:
         smi = readers["smi"]()
         if smi is not None:
