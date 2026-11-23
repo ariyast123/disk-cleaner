@@ -14,9 +14,13 @@ worst bug this app can ship.
    verified live on his machine. A registry uninstall-key lookup
    remains an optional extra fallback if a future install layout
    breaks the folder scan.
-2. **Session history.** Record each game session (game, start,
-   length, peak state) to a local JSON history in ~/GameModeVPN and
-   show a small history list in the UI.
+2. **Session history — DONE in v1.3.0.** Each finished game session
+   is recorded (games played, start time, length, Game Mode time,
+   whether a restore was needed, best state reached) to
+   `~/GameModeVPN/history.json` (capped at 50 entries, oldest drop
+   first; a corrupt file degrades to an empty list) and the last 8
+   sessions show in a SESSION HISTORY card in the UI. Covered by
+   test rounds 21 (engine records + storage) and 22 (GUI).
 3. **Minimize to tray — DONE in v1.2.0** (pystray; close hides to
    the tray, double-click reopens, Quit in the tray menu).
 4. **Exe icon + branding.** A proper .ico for GameModeVPN.exe in
