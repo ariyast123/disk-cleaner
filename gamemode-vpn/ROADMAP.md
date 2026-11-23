@@ -5,11 +5,19 @@ on a decision Ariya has not made. Detection robustness always
 outranks new features: a wrong "protected" or "bare" claim is the
 worst bug this app can ship.
 
-1. **Windows detection hardening.** Verify the Proton adapter names
-   the current Proton Windows app actually creates (WireGuard/Wintun
-   naming) and the exe's install path on a real machine; add a
-   registry uninstall-key lookup as a path fallback. Keep every
-   probe degrading to "unknown", never to a guess.
+1. **Windows detection hardening.** VERIFIED on Ariya's PC
+   (Nov 22, 2026): Proton VPN 5.1.10's main exe is
+   **ProtonVPN.Client.exe** — there is no ProtonVPN.exe — located in
+   the versioned folder `C:\Program Files\Proton\VPN\v5.1.10\`
+   (755 files). Fix `find_proton_exe` to glob
+   `C:\Program Files\Proton\VPN\v*\` for ProtonVPN.Client.exe first
+   (highest version folder wins), then ProtonVPN.exe for older
+   installs, and un-lock the Browse dialog's file filter (it
+   defaults to the exact name ProtonVPN.exe, which hid the real
+   exe). Also verify the Proton adapter names the current app
+   creates (WireGuard/Wintun naming) and consider a registry
+   uninstall-key lookup as a path fallback. Keep every probe
+   degrading to "unknown", never to a guess.
 2. **Session history.** Record each game session (game, start,
    length, peak state) to a local JSON history in ~/GameModeVPN and
    show a small history list in the UI.
