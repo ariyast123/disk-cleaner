@@ -39,8 +39,8 @@ def test_helper_with_dist_launch():
 
 
 def test_version_is_123():
-    assert gui.VERSION == "1.2.3"
-    print("PASS app version is 1.2.3")
+    assert gui.VERSION == "1.2.4"
+    print("PASS app version is 1.2.4")
 
 
 if __name__ == "__main__":
