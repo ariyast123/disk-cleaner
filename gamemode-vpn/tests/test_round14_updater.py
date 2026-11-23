@@ -15,6 +15,11 @@ def test_helper_waits_builds_and_copies_back():
     lines = gui.update_helper_lines(PROJECT, launched)
     body = "\n".join(lines)
     assert ":waitloop" in body and "GameModeVPN.exe" in body
+    # kill-first: every copy dies before any waiting or building
+    assert "taskkill /F /IM GameModeVPN.exe" in body
+    assert body.index("taskkill /F /IM GameModeVPN.exe") < \
+        body.index("call build.bat")
+    assert "if %WAITS% GEQ 10 goto proceed" in body
     # the build runs unattended (auto = no pause) and logs to a file
     assert "call build.bat auto >> update_build.log 2>&1" in body
     assert f'set "BUILT={BUILT}"' in body
@@ -39,8 +44,8 @@ def test_helper_with_dist_launch():
 
 
 def test_version_is_130():
-    assert gui.VERSION == "1.3.1"
-    print("PASS app version is 1.3.1")
+    assert gui.VERSION == "1.3.2"
+    print("PASS app version is 1.3.2")
 
 
 if __name__ == "__main__":
