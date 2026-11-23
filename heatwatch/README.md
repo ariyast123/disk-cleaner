@@ -6,7 +6,10 @@ watched game runs, records each session's peaks and time spent
 over the warning line, warns live when the CPU cooks, and keeps
 a running verdict — healthy / hot / repaste due — computed from
 the median peak of recent full-length sessions. The point is a
-data-driven answer to "do I need to repaste yet?".
+data-driven answer to "do I need to repaste yet?". Every session
+also keeps its temperature samples, and each history row has a
+Graph button that opens a small CPU/GPU line chart for that
+session, with the warning lines drawn in.
 
 ## Temperature sources (in order)
 
