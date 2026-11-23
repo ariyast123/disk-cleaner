@@ -1,5 +1,5 @@
 {
-  "version": "1.2.2",
-  "notes": "One-click updates: kill-first helper, no waiting, no manual steps",
-  "patch_notes": "The update flow is now truly one-click, at Ariya's request. The helper no longer waits politely for the app to close: its first move is to force-close every running copy of HeatWatch.exe, then verify they are gone (a short capped check), rebuild and reopen. The app itself exits within a second of the click. Test round 10 updated for the kill-first helper; all 17 rounds pass."
+  "version": "1.2.3",
+  "notes": "Test update - no changes",
+  "patch_notes": "Test update, published at Ariya's request to exercise the update flow. No changes to the app itself."
 }
