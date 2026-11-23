@@ -159,3 +159,20 @@ flow). New test round 18 (fake pystray): startup command,
 flag parsing, hide-to-tray, notify-while-hidden, What's New
 guard, visible-launch behavior. 18 rounds all pass, pyflakes
 clean. Baton untouched.
+
+## 2026-11-22 — v1.2.8 (off-cycle hotfix)
+
+The 1.2.7 banner never appeared on Ariya's PC even after two
+restarts, though the publish was verified live: GitHub's raw
+CDN serves version.json per region with a minutes-long lag —
+the assistant's edge showed 1.2.7 while Ariya's (through his
+VPN exit) still served 1.2.6 — and the app checked exactly
+once at startup, silently. Fixes: every update fetch (the
+version check AND the file downloads) now appends a
+cache-busting ?t= query (_raw_url), and _check_update_worker
+re-checks every 5 minutes while the app runs, posting the
+banner (and, since 1.2.7, the tray notification) whenever a
+newer version appears — no restart roulette anymore. New test
+round 19 covers the URL builder, busted fetches/downloads via
+a fake urlopen, and the worker loop's post/stop behavior.
+19 rounds all pass, pyflakes clean. Baton untouched.
