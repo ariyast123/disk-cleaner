@@ -11,6 +11,31 @@ startup, offers one-click updates, and shows a What's New window
 after each update. Daily updates alternate between Ariya's two
 Muse instances, opposite to Disk Cleaner's turns.
 
+## 2026-11-22 — v1.2.2 (off-cycle, at Ariya's direct request)
+
+One consolidated manual-install release for every update problem
+he reported that evening, per his instruction: this one he
+installs by hand (files in chat), future ones must flow through
+the in-app updater.
+
+- **App did not reopen after updating.** Root cause: build.bat
+  ended with an interactive `pause` (both success and failure
+  paths), and the unattended finish_update.bat calls it — the
+  helper stalled forever on a keypress nobody could give. The
+  updater now calls `build.bat auto` (pause skipped in auto
+  mode), redirects the build to update_build.log, relaunches the
+  previous version if the build fails, and the app restarts
+  itself to finish instead of asking for a manual close. A
+  pending update also bypasses minimize-to-tray, which would
+  otherwise keep the process alive and stall the helper's wait.
+- **Stale-copy loop** (from v1.2.1): the freshly built exe is
+  copied back over the launched exe's path.
+- **New app icon** (gamemode_icon.ico, embedded by build.bat and
+  used for the window and tray): violet ring + cyan core on a
+  dark tile, so current builds are visually distinct from old
+  copies with the generic icon. The icon joins UPDATE_FILES so
+  future updates carry it.
+
 ## 2026-11-22 — v1.2.1 (off-cycle hotfix)
 
 Updater fix, reported by Ariya the same evening: after updating,
