@@ -13,22 +13,22 @@ confirmation, no admin requirement, UI text in English.
    as custom.github, test publish verified, and the daily cron now
    publishes each update to the repo. The publishing how-to lives in
    ~/workspace/custom-connectors/custom.github/CONNECTOR.md.
-2. **HOTFIX — updater stall: build.bat `pause` (found Nov 22, 2026
-   via GameMode VPN; do this before item 3).** Disk Cleaner's
+2. **HOTFIX — updater stall: build.bat `pause` — DONE (Nov 22, 2026,
+   v1.1.1).** Disk Cleaner's
    build.bat still has the unconditional `pause` on both the success
    and the error paths — the exact flaw that stalled GameMode VPN's
    unattended finish_update.bat forever (a build that waits for a
    keypress nobody will ever give). Disk Cleaner's update helper
    also calls plain `call build.bat` (in _write_update_helper) with
-   no argument and no build log. Fix, mirroring GameMode v1.2.2:
+   no argument and no build log. Fixed, mirroring GameMode v1.2.2:
    (a) build.bat skips `pause` on both paths when called with the
    argument `auto` (e.g. `if /I not "%~1"=="auto" pause`);
    (b) the helper calls `call build.bat auto > update_build.log 2>&1`;
    (c) also port GameMode v1.2.1's copy-back: after a successful
    build, copy dist\DiskCleaner.exe back over the launched exe's
    path before relaunching, so a pinned or standalone copy can
-   never resurrect an old version. Cover the helper lines with
-   tests like GameMode's round 14 and run the full suite as usual.
+   never resurrect an old version. Covered by new tests in round 5
+   (section 12); full suite green.
 3. **What's New window after updating (Ariya's ask, Nov 21, 2026).** When the app finishes updating itself, the
    next launch shows a small closable window with the new version's
    patch notes. Design: version.json gains a `patch_notes` field (a
