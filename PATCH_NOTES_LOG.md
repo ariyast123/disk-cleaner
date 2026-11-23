@@ -31,3 +31,8 @@ the weekly digest job reads the last 7 days and posts them in chat
   the relaunch. No manual steps, no infinite wait loop.
 - New test round 6 covers the kill-first helper and the
   self-closing update path. All 6 rounds pass.
+
+## 2026-11-22 — v1.2.1 (test update)
+
+- Test update at Ariya's request, to exercise the update
+  flow. No changes to the app itself.
