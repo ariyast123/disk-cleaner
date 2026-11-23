@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -816,8 +816,17 @@ class GameModeApp(ctk.CTk):
     def _auto_result(self, action, ok, detail):
         if ok:
             self._log(f"Auto mode: {detail} — verifying…")
-        else:
-            self._log(f"Auto mode could not {action} ({detail}) — the steps above still work")
+            return
+        # A late failure is not a failure when the job is already
+        # done — e.g. Ariya clicked Disconnect himself while the
+        # auto scan was still looking for the button.
+        if action == "disconnect" and self.engine.vpn_state == "bare":
+            self._log("Auto mode: already bare — no click was needed")
+            return
+        if action == "connect" and self.engine.vpn_state == "protected":
+            self._log("Auto mode: already protected — no click was needed")
+            return
+        self._log(f"Auto mode could not {action} ({detail}) — the steps above still work")
 
     def _launch_once_for_session(self):
         marker = self.engine.session_start or "restore"
