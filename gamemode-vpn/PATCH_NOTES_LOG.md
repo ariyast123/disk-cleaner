@@ -176,3 +176,24 @@ newer version appears — no restart roulette anymore. New test
 round 19 covers the URL builder, busted fetches/downloads via
 a fake urlopen, and the worker loop's post/stop behavior.
 19 rounds all pass, pyflakes clean. Baton untouched.
+
+## 2026-11-22 — v1.2.9 (off-cycle hotfix)
+
+Ariya: in-app updates kept needing a manual finish_update run;
+his screenshot showed the helper sitting in its wait loop. Code
+inspection found a real trap in _update_downloaded: the helper
+was started FIRST and a modal showinfo ("will now close...")
+came after — the helper waited for the app to exit while the
+app waited for an OK click that can sit unseen behind other
+windows. Fixes: the modal is removed from the frozen restart
+path (log line, plus a tray notification when hidden); a
+3-second threading.Timer(os._exit) now guarantees the process
+exit the helper waits for, whatever else is running; the
+helper narrates its phases on the console as well as in
+update_build.log (a manual run was a black window even while
+working) and its wait cap drops ~60 s -> ~30 s. New test round
+20 covers the helper text and the no-modal/guaranteed-exit
+flow with fakes. 20 rounds all pass, pyflakes clean. Note: the
+update TO 1.2.9 still runs under 1.2.8's flow (one last OK
+click on its dialog); from 1.2.9 on the restart is click-free.
+Baton untouched.
