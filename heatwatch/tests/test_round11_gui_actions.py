@@ -62,6 +62,56 @@ def main():
         assert "Repaste is due" in app.verdict_title.cget("text"), \
             app.verdict_title.cget("text")
         print("PASS verdict card shows repaste-due on hot history")
+
+        record = {"game": "Rust", "start": 1700000000,
+                  "duration_s": 900, "peak_cpu": 99.0, "peak_gpu": 80.0,
+                  "sec_above_cpu": 60.0, "warn_cpu": 95, "warn_gpu": 85,
+                  "series": [[0.0, 70.0, 60.0], [300.0, 99.0, 80.0],
+                             [600.0, 90.0, 75.0], [900.0, 85.0, 70.0]]}
+        app.history = [record]
+        app._refresh_history()
+        buttons = []
+        for row in app.history_frame.winfo_children():
+            for child in row.winfo_children():
+                if isinstance(child, gui.ctk.CTkButton):
+                    buttons.append(child)
+        assert len(buttons) == 1
+        assert buttons[0].cget("text") == "Graph"
+        buttons[0].invoke()
+        app.update()
+        graphs = [w for w in app.winfo_children()
+                  if isinstance(w, gui.ctk.CTkToplevel)]
+        assert len(graphs) == 1
+        graph = graphs[0]
+        import tkinter as tk
+        canvases = [w for w in graph.winfo_children()
+                    if isinstance(w, tk.Canvas)]
+        assert len(canvases) == 1
+        assert len(canvases[0].find_all()) > 5  # grid + warn + curves
+        graph.destroy()
+        print("PASS Graph button opens a window with the drawn curves")
+
+        app._show_session_graph({"game": "Rust", "start": 0,
+                                 "duration_s": 600, "peak_cpu": 90.0,
+                                 "peak_gpu": 70.0})
+        app.update()
+        graphs = [w for w in app.winfo_children()
+                  if isinstance(w, gui.ctk.CTkToplevel)]
+        assert len(graphs) == 1
+        labels = [w.cget("text") for w in graphs[0].winfo_children()
+                  if isinstance(w, gui.ctk.CTkLabel)]
+        assert any("No temperature samples" in text for text in labels)
+        graphs[0].destroy()
+        print("PASS a pre-graph session says so instead of drawing "
+              "nothing")
+
+        app.history = [dict(record, series=None)]
+        app._refresh_history()
+        buttons = [child for row in app.history_frame.winfo_children()
+                   for child in row.winfo_children()
+                   if isinstance(child, gui.ctk.CTkButton)]
+        assert buttons == []
+        print("PASS a session without a series gets no Graph button")
     finally:
         app._stop.set()
         app.destroy()
