@@ -19,6 +19,19 @@ The app itself only ever reads `version.json` and downloads
 other file in the repo is documentation or coordination and is
 ignored by the updater.
 
+## Second app: GameMode VPN (added Nov 22, 2026)
+
+GameMode VPN lives in this same repo under `gamemode-vpn/` with its
+own `version.json`, `ROADMAP.md`, `PATCH_NOTES_LOG.md`, test suite
+and baton (`gamemode-vpn/NEXT_TURN.txt`). Its full protocol is in
+`gamemode-vpn/COORDINATION.md`. The arrangement: both apps get a
+daily update, one per instance, and the turns are OPPOSITE — on a
+day when one instance updates Disk Cleaner, the other updates
+GameMode VPN. Each side flips only the baton of the app it just
+updated. Ariya's rule for GameMode updates: quality over speed —
+time does not matter, the final result does; catch the bugs before
+publishing, and publish nothing on a day the tests do not pass.
+
 ## The daily protocol (whoever's turn it is)
 
 1. Read `NEXT_TURN.txt`. Act only if it names you. If it names the
