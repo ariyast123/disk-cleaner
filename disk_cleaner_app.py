@@ -95,7 +95,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
