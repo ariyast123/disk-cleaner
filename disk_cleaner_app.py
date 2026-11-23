@@ -95,7 +95,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -176,27 +176,41 @@ def project_folder():
 
 
 def update_helper_lines(project, launched_exe):
-    """The finish_update.bat body: wait for DiskCleaner.exe to exit,
-    rebuild with `build.bat auto` (no pause - nobody is there to press
-    a key) logging the build to update_build.log, then copy the fresh
-    exe back over the copy that was actually launched (a taskbar pin
-    may point at a standalone copy outside dist) and relaunch THAT
-    path - so a pinned shortcut can never resurrect an old version
-    after an update. If the build failed, the old launched copy is
-    relaunched instead of nothing."""
+    """The finish_update.bat body, kill-first design (Ariya's
+    request, Nov 22, 2026): the helper does NOT wait politely for
+    the app to close. Its first move is taskkill — every running
+    copy of DiskCleaner.exe dies at once — then it verifies they
+    are gone (a short capped loop; a copy that somehow survives
+    is logged and the build proceeds anyway), rebuilds with
+    `build.bat auto` (no pause — nobody is there to press a key)
+    logging to update_build.log, copies the fresh exe back over
+    the copy that was actually launched (a taskbar pin may point
+    at a standalone copy outside dist) and relaunches THAT path.
+    If the build failed, the old launched copy is relaunched
+    instead of nothing."""
     built = os.path.join(project, "dist", "DiskCleaner.exe")
     return [
         "@echo off",
         "title Disk Cleaner update",
+        f'cd /d "{project}"',
+        "echo [helper] update started > update_build.log",
+        "echo Disk Cleaner update: closing any running copies...",
+        "taskkill /F /IM DiskCleaner.exe >> update_build.log 2>&1",
+        "set /a WAITS=0",
         ":waitloop",
         'tasklist /FI "IMAGENAME eq DiskCleaner.exe" 2>NUL | '
         'find /I "DiskCleaner.exe" >NUL',
-        "if not errorlevel 1 (",
-        "  timeout /t 2 /nobreak >NUL",
-        "  goto waitloop",
-        ")",
-        f'cd /d "{project}"',
-        "call build.bat auto > update_build.log 2>&1",
+        "if errorlevel 1 goto allclosed",
+        "set /a WAITS+=1",
+        "if %WAITS% GEQ 10 goto proceed",
+        "timeout /t 1 /nobreak >NUL",
+        "goto waitloop",
+        ":proceed",
+        "echo [helper] a copy is still running - continuing "
+        "anyway >> update_build.log",
+        ":allclosed",
+        "echo [helper] building >> update_build.log",
+        "call build.bat auto >> update_build.log 2>&1",
         f'set "BUILT={built}"',
         f'set "LAUNCHED={launched_exe}"',
         'if exist "%BUILT%" (',
@@ -285,9 +299,10 @@ class DiskCleanerApp(ctk.CTk):
         if not messagebox.askyesno(
             "Update Disk Cleaner",
             f"Download version {self.update_info['version']} and update?\n\n"
-            "The new files go into the project folder. When you then close "
-            "Disk Cleaner, it rebuilds itself and reopens automatically - "
-            "that takes about a minute.",
+            "The new files go into the project folder. Disk Cleaner "
+            "then closes itself, rebuilds and reopens on the new "
+            "version - that takes about a minute, and you don't "
+            "need to close anything yourself.",
         ):
             return
         self.update_banner.pack_forget()
@@ -319,13 +334,17 @@ class DiskCleanerApp(ctk.CTk):
         if getattr(sys, "frozen", False):
             self._write_update_helper()
             self.status.configure(
-                text="Update ready - close the app to finish updating."
+                text="Updating - the app will close and reopen on "
+                     "the new version."
             )
-            messagebox.showinfo(
-                "Update ready",
-                "The new files are in place.\n\nClose Disk Cleaner now: it "
-                "will rebuild itself and reopen on the new version.",
-            )
+            # No dialog, no manual close (Ariya's rule): the helper
+            # kills any copy still running, and this timer is the
+            # backstop that guarantees this process exits.
+            threading.Timer(1.0, os._exit, args=(0,)).start()
+            try:
+                self.destroy()
+            except Exception:
+                pass
         else:
             self.status.configure(text="Update ready - restart the app.")
             messagebox.showinfo(
