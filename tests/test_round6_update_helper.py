@@ -39,8 +39,8 @@ def test_no_manual_close_step():
 
 
 def test_version():
-    assert gui.VERSION == "1.2.0"
-    print("PASS app version is 1.2.0")
+    assert gui.VERSION == "1.2.1"
+    print("PASS app version is 1.2.1")
 
 
 def main():
