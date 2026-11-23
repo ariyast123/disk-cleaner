@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.6"
+VERSION = "1.2.7"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -204,8 +204,23 @@ def update_helper_lines(project, launched_exe):
     ]
 
 
+def _startup_command(frozen, executable, script_path):
+    """The HKCU Run command for Start-with-Windows. It carries the
+    --minimized flag so a boot launch lands in the tray instead of
+    opening the window (Ariya's ask); manual launches and the
+    updater's relaunch carry no flag and open normally."""
+    if frozen:
+        return f'"{executable}" --minimized'
+    return f'"{executable}" "{script_path}" --minimized'
+
+
+def _wants_minimized(argv):
+    """True when this launch asked to start minimized (boot entry)."""
+    return any(a in ("--minimized", "/minimized") for a in argv[1:])
+
+
 class GameModeApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, start_minimized=False):
         super().__init__()
         self.settings = core.load_settings()
         self.engine = core.Engine(self.settings)
@@ -221,6 +236,8 @@ class GameModeApp(ctk.CTk):
         self._update_pending = False
         self._tray_icon = None
         self._tray_notice_shown = False
+        self._hidden_in_tray = False
+        self._start_minimized = bool(start_minimized)
         self._pulse_phase = False
         self._log_lines = []
 
@@ -249,6 +266,14 @@ class GameModeApp(ctk.CTk):
         self.after(500, self._tick)
         self.after(700, self._maybe_show_whats_new)
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
+        if sys.platform == "win32" and self.settings.get("start_with_windows"):
+            # Refresh the startup entry so it always points at THIS
+            # exe and carries --minimized; entries written by older
+            # versions predate the flag and would open the window
+            # at boot even after this update.
+            self._apply_start_with_windows(True)
+        if self._start_minimized:
+            self.after(300, self._start_in_tray)
 
     # ------------------------------------------------------------------
     # Layout
@@ -559,10 +584,9 @@ class GameModeApp(ctk.CTk):
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
                 0, winreg.KEY_SET_VALUE)
             if enable:
-                if getattr(sys, "frozen", False):
-                    command = f'"{sys.executable}"'
-                else:
-                    command = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+                command = _startup_command(
+                    getattr(sys, "frozen", False), sys.executable,
+                    os.path.abspath(__file__))
                 winreg.SetValueEx(key, "GameModeVPN", 0, winreg.REG_SZ, command)
             else:
                 try:
@@ -634,6 +658,13 @@ class GameModeApp(ctk.CTk):
         if not self.update_banner.winfo_manager():
             self.update_banner.pack(fill="x", padx=18, pady=(12, 0))
         self._log(f"Update available: v{info['version']}")
+        if self._hidden_in_tray:
+            # the banner is invisible in the tray; knock instead,
+            # so Ariya can open the app himself when he wants it
+            self._notify_tray(
+                f"Version {info['version']} is ready — open GameMode VPN "
+                "to install it.",
+                "GameMode VPN update available")
 
     def _dismiss_update_banner(self):
         self.update_banner.pack_forget()
@@ -644,8 +675,8 @@ class GameModeApp(ctk.CTk):
         if not messagebox.askyesno(
             "Update GameMode VPN",
             f"Download version {self.update_info['version']} and update?\n\n"
-            "The new files go into the project folder. When you then close "
-            "GameMode VPN, it rebuilds itself and reopens automatically — "
+            "The new files go into the project folder. GameMode VPN then "
+            "restarts itself, rebuilds and reopens on the new version — "
             "that takes about a minute.",
         ):
             return
@@ -706,6 +737,10 @@ class GameModeApp(ctk.CTk):
         )
 
     def _maybe_show_whats_new(self):
+        if self._hidden_in_tray:
+            # boot launch: never pop a dialog; the saved notes wait
+            # for the next time the window is actually opened
+            return
         data = core.pop_whats_new(VERSION)
         if not data:
             return
@@ -985,6 +1020,28 @@ class GameModeApp(ctk.CTk):
             self._tray_icon = None
             return False
 
+    def _notify_tray(self, message, title):
+        if self._tray_icon is None:
+            return
+        try:
+            self._tray_icon.notify(message, title)
+        except Exception:
+            pass
+
+    def _start_in_tray(self):
+        """Boot launch (--minimized): go straight to the tray
+        without presenting the window. If the tray is unavailable,
+        minimize instead — the app must never become unreachable."""
+        if self._ensure_tray():
+            self.withdraw()
+            self._hidden_in_tray = True
+            self._log("Started minimized in the tray (boot launch)")
+        else:
+            try:
+                self.iconify()
+            except tk.TclError:
+                pass
+
     def _on_window_close(self):
         if self._update_pending:
             # an update helper is waiting for this process to exit;
@@ -993,19 +1050,18 @@ class GameModeApp(ctk.CTk):
             return
         if self._should_tray_hide() and self._ensure_tray():
             self.withdraw()
+            self._hidden_in_tray = True
             if not self._tray_notice_shown:
                 self._tray_notice_shown = True
-                try:
-                    self._tray_icon.notify(
-                        "Still watching for games. Right-click the tray icon "
-                        "to open GameMode VPN or quit it.",
-                        "GameMode VPN is in the tray")
-                except Exception:
-                    pass
+                self._notify_tray(
+                    "Still watching for games. Right-click the tray icon "
+                    "to open GameMode VPN or quit it.",
+                    "GameMode VPN is in the tray")
             return
         self._on_close()
 
     def _show_from_tray(self):
+        self._hidden_in_tray = False
         try:
             self.deiconify()
             self.lift()
@@ -1069,7 +1125,7 @@ def main():
         return
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
-    GameModeApp().mainloop()
+    GameModeApp(start_minimized=_wants_minimized(sys.argv)).mainloop()
 
 
 if __name__ == "__main__":
