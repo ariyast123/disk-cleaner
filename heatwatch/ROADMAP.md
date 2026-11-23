@@ -6,10 +6,11 @@
    time; sustained-heat tray warning; repaste verdict (median
    peak of the last 5 full sessions); tray + boot-minimized;
    hardened self-update.
-2. **Per-session temperature graph** — store the session's
-   samples (they are already collected tick by tick) and draw a
-   small CPU/GPU line chart in the history detail, so a spike's
-   shape is visible, not just its peak.
+2. **Per-session temperature graph** — DONE (v1.1.0, Nov 22,
+   2026). The session's samples are stored (thinned past 600
+   points so long sessions stay bounded) and each history row
+   has a Graph button opening a small CPU/GPU line chart with
+   the warning lines drawn in.
 3. **Custom games in the UI** — add/remove games like GameMode
    has (v1.0.0 ships toggles only).
 4. **LHM autostart helper** — a guided one-time setup that
