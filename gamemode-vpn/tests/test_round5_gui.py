@@ -9,6 +9,7 @@ import gamemode_core as core
 TMP = tempfile.mkdtemp(prefix="gmvpn-gui-")
 core.settings_path = lambda: os.path.join(TMP, "settings.json")
 core.log_path = lambda: os.path.join(TMP, "gamemode.log")
+core.history_path = lambda: os.path.join(TMP, "history.json")
 
 import gamemode_vpn_app as gui
 
