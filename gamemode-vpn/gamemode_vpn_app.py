@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.3.3"
+VERSION = "1.3.4"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -772,8 +772,16 @@ class GameModeApp(ctk.CTk):
             fh.write("\r\n".join(lines))
         subprocess.Popen(
             ["cmd", "/c", helper],
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+            # The helper gets its OWN console window, exactly like
+            # a manual double-click of finish_update.bat. It used
+            # to be DETACHED_PROCESS (no console): on Ariya's PC
+            # the detached batch died silently right after its
+            # first log line (Nov 22, 2026) - a windowed app's
+            # invalid std handles kill cmd when it echoes. Manual
+            # runs always worked; now automatic ones match them.
+            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            stdin=subprocess.DEVNULL,
             close_fds=True,
         )
 
