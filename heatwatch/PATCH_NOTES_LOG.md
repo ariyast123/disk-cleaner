@@ -33,3 +33,16 @@ with the CPU warning line dashed in, the session card's
 border turns red while the CPU is over the line, and every
 history row gets a severity dot colored by its peak. Two new
 test rounds (14 helpers, 15 GUI polish); all 15 rounds pass.
+
+## 2026-11-22 — v1.2.0 (off-cycle, at Ariya's direct request)
+
+A deeper UI pass. A header band now shows the live state in
+words (waiting for sensors, idle, in session with the game
+named, running hot). The session card gains three chips —
+peak CPU, peak GPU, time over the line — colored by severity.
+Every watched game gets a running dot that lights green while
+it plays. The repaste verdict card's border takes the
+verdict's color. The live graph labels the current CPU and
+GPU values at its right edge. New test round 16 covers the
+header, chips, dots, labels and verdict border; all 16
+rounds pass.
