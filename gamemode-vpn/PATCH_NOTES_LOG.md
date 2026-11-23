@@ -240,3 +240,14 @@ kill-first helper; all 23 rounds pass.
 
 - Test update at Ariya's request, to exercise the update
   flow. No changes to the app itself.
+
+## 2026-11-22 — v1.3.4
+
+- Automatic-update fix, found by Ariya's live test: the app
+  closed on Update but the helper (launched with no console,
+  DETACHED_PROCESS) died silently after its first log line on
+  his PC; the same finish_update.bat run by hand worked. The
+  helper now launches with its own console window
+  (CREATE_NEW_CONSOLE), identical to a manual double-click.
+  Landing on this version takes one manual finish_update run;
+  after that, updates are fully automatic.
