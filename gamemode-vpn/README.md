@@ -67,6 +67,16 @@ through the blocked state proves it is on; a protected session that
 goes bare without blocking proves it is off, and the guided steps
 shorten to the plain Disconnect / Connect pair.
 
+## Session history (v1.3.0)
+
+Every finished game session is recorded to
+`%USERPROFILE%\GameModeVPN\history.json` — games played, start time,
+length, how long Game Mode was on, whether a restore was needed, and
+the best state reached — and the last 8 sessions show in a SESSION
+HISTORY card in the main window. The file is capped at 50 entries
+(oldest drop first) and a corrupt file simply shows as empty history;
+history is never load-bearing, so a write failure is silently skipped.
+
 ## Updates
 
 GameMode updates itself through GitHub, like Disk Cleaner: on
@@ -83,7 +93,7 @@ in that repo.
 - `gamemode_core.py` — watcher, state machine, probes, settings.
 - `build.bat` — builds `dist\GameModeVPN.exe` (PyInstaller).
 - Settings and log: `%USERPROFILE%\GameModeVPN\` (`settings.json`,
-  `gamemode.log`) — never next to the exe.
+  `gamemode.log`, `history.json`) — never next to the exe.
 
 ## Run without building
 
