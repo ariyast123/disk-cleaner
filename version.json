@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
-  "notes": "One-click updates: the app closes itself, no manual steps",
-  "patch_notes": "The update flow is now truly one-click, at Ariya's request. Before, a dialog told you to close Disk Cleaner yourself and the helper waited forever if you didn't. Now: you click Update, the app closes itself, and the helper's first move is to force-close any other running copies, verify they are gone, then rebuild and reopen on the new version. No dialog, no manual close, no waiting loop. New test round 6 covers the helper and the self-closing path; all 6 rounds pass."
+  "version": "1.2.1",
+  "notes": "Test update - no changes",
+  "patch_notes": "Test update, published at Ariya's request to exercise the update flow. No changes to the app itself."
 }
