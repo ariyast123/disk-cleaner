@@ -15,13 +15,17 @@ def test_helper_waits_builds_and_copies_back():
     lines = gui.update_helper_lines(PROJECT, launched)
     body = "\n".join(lines)
     assert ":waitloop" in body and "GameModeVPN.exe" in body
-    assert "call build.bat" in body
+    # the build runs unattended (auto = no pause) and logs to a file
+    assert "call build.bat auto > update_build.log 2>&1" in body
     assert f'set "BUILT={BUILT}"' in body
     assert f'set "LAUNCHED={launched}"' in body
     # the copy-back guard: only when the paths differ (case-insensitive)
     assert 'if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL' in body
     # and it relaunches the launched path, not just the dist build
     assert 'start "" "%LAUNCHED%"' in body
+    # if the build failed (no fresh exe), the old copy still relaunches
+    assert ') else (' in body
+    assert 'if exist "%LAUNCHED%" start "" "%LAUNCHED%"' in body
     print("PASS helper copies the fresh exe over the launched copy")
 
 
@@ -34,13 +38,13 @@ def test_helper_with_dist_launch():
     print("PASS helper is consistent when launched from dist")
 
 
-def test_version_is_121():
-    assert gui.VERSION == "1.2.1"
-    print("PASS app version is 1.2.1")
+def test_version_is_122():
+    assert gui.VERSION == "1.2.2"
+    print("PASS app version is 1.2.2")
 
 
 if __name__ == "__main__":
     test_helper_waits_builds_and_copies_back()
     test_helper_with_dist_launch()
-    test_version_is_121()
+    test_version_is_122()
     print("ROUND 14: ALL PASS")
