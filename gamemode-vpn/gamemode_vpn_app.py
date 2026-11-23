@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.7"
+VERSION = "1.2.8"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -112,13 +112,25 @@ def project_folder():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def _raw_url(path, cache_bust=False):
+    """raw.githubusercontent URL for a repo file. With cache_bust a
+    throwaway query is appended: GitHub's raw cache is keyed by URL
+    and lags minutes behind a publish — and each region's cache
+    lags on its own clock, so Ariya's app kept reading the old
+    version.json long after the new one was live. The query makes
+    every fetch read the current file."""
+    url = f"https://raw.githubusercontent.com/{UPDATE_REPO}/main/{path}"
+    if cache_bust:
+        url += f"?t={int(time.time())}"
+    return url
+
+
 def fetch_update_info(timeout=10):
     """Return the repo's gamemode version.json dict, or None."""
     import json
     import urllib.request
 
-    url = (f"https://raw.githubusercontent.com/{UPDATE_REPO}/main/"
-           f"{UPDATE_PATH}/version.json")
+    url = _raw_url(f"{UPDATE_PATH}/version.json", cache_bust=True)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -136,8 +148,7 @@ def download_update_files(timeout=30):
     files = {}
     try:
         for name in core.UPDATE_FILES:
-            url = (f"https://raw.githubusercontent.com/{UPDATE_REPO}/main/"
-                   f"{UPDATE_PATH}/{name}")
+            url = _raw_url(f"{UPDATE_PATH}/{name}", cache_bust=True)
             with urllib.request.urlopen(url, timeout=timeout) as resp:
                 files[name] = resp.read()
     except Exception:
@@ -644,9 +655,18 @@ class GameModeApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def _check_update_worker(self):
-        info = fetch_update_info()
-        if info and core.parse_version(info["version"]) > core.parse_version(VERSION):
-            self.msg_queue.put(("update_available", info))
+        # Check at startup, then re-check every few minutes: the
+        # app mostly lives in the tray, and a single startup check
+        # that raced a stale cache (or a tunnel still coming up)
+        # once meant no banner until a manual restart. The file is
+        # tiny; the retry makes the tray notification reliable.
+        while not self._stop.is_set():
+            info = fetch_update_info()
+            if info and core.parse_version(info["version"]) > core.parse_version(VERSION):
+                self.msg_queue.put(("update_available", info))
+                return
+            if self._stop.wait(5 * 60):
+                return
 
     def _show_update_banner(self, info):
         self.update_info = info
