@@ -16,7 +16,7 @@ def test_helper_waits_builds_and_copies_back():
     body = "\n".join(lines)
     assert ":waitloop" in body and "GameModeVPN.exe" in body
     # the build runs unattended (auto = no pause) and logs to a file
-    assert "call build.bat auto > update_build.log 2>&1" in body
+    assert "call build.bat auto >> update_build.log 2>&1" in body
     assert f'set "BUILT={BUILT}"' in body
     assert f'set "LAUNCHED={launched}"' in body
     # the copy-back guard: only when the paths differ (case-insensitive)
@@ -39,8 +39,8 @@ def test_helper_with_dist_launch():
 
 
 def test_version_is_123():
-    assert gui.VERSION == "1.2.4"
-    print("PASS app version is 1.2.4")
+    assert gui.VERSION == "1.2.5"
+    print("PASS app version is 1.2.5")
 
 
 if __name__ == "__main__":
