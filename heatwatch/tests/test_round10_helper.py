@@ -30,9 +30,9 @@ def test_helper_lines():
     print("PASS helper: capped wait, narration, log, copy-back, relaunch")
 
 
-def test_version_is_1_0_0():
-    assert gui.VERSION == "1.0.0"
-    print("PASS app version is 1.0.0")
+def test_version_is_1_1_0():
+    assert gui.VERSION == "1.1.0"
+    print("PASS app version is 1.1.0")
 
 
 def test_startup_command():
@@ -50,7 +50,7 @@ def test_startup_command():
 
 def main():
     test_helper_lines()
-    test_version_is_1_0_0()
+    test_version_is_1_1_0()
     test_startup_command()
     print("ROUND 10 ALL PASS")
 
