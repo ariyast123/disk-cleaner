@@ -13,8 +13,23 @@ confirmation, no admin requirement, UI text in English.
    as custom.github, test publish verified, and the daily cron now
    publishes each update to the repo. The publishing how-to lives in
    ~/workspace/custom-connectors/custom.github/CONNECTOR.md.
-2. **What's New window after updating (Ariya's ask, Nov 21, 2026 —
-   this one is next).** When the app finishes updating itself, the
+2. **HOTFIX — updater stall: build.bat `pause` (found Nov 22, 2026
+   via GameMode VPN; do this before item 3).** Disk Cleaner's
+   build.bat still has the unconditional `pause` on both the success
+   and the error paths — the exact flaw that stalled GameMode VPN's
+   unattended finish_update.bat forever (a build that waits for a
+   keypress nobody will ever give). Disk Cleaner's update helper
+   also calls plain `call build.bat` (in _write_update_helper) with
+   no argument and no build log. Fix, mirroring GameMode v1.2.2:
+   (a) build.bat skips `pause` on both paths when called with the
+   argument `auto` (e.g. `if /I not "%~1"=="auto" pause`);
+   (b) the helper calls `call build.bat auto > update_build.log 2>&1`;
+   (c) also port GameMode v1.2.1's copy-back: after a successful
+   build, copy dist\DiskCleaner.exe back over the launched exe's
+   path before relaunching, so a pinned or standalone copy can
+   never resurrect an old version. Cover the helper lines with
+   tests like GameMode's round 14 and run the full suite as usual.
+3. **What's New window after updating (Ariya's ask, Nov 21, 2026).** When the app finishes updating itself, the
    next launch shows a small closable window with the new version's
    patch notes. Design: version.json gains a `patch_notes` field (a
    few short lines) next to the short banner `notes`. When he clicks
@@ -26,20 +41,20 @@ confirmation, no admin requirement, UI text in English.
    version.json on every publish and appends the same notes to
    PATCH_NOTES_LOG.md for the weekly digest. Daily chat messages
    carry no changelog (his rule) — only the new version number.
-3. **Faster cleaning** — the first real clean (36,776 files) took
+4. **Faster cleaning** — the first real clean (36,776 files) took
    ~25 minutes because each file is a separate Recycle Bin shell call.
    Batch the recycle operations (one shell operation for many files)
    while keeping per-file failure reporting and the log.
-4. **Scan progress with a percentage** — quick counting pass or
+5. **Scan progress with a percentage** — quick counting pass or
    running estimate so the bar shows % instead of an indeterminate
    stripe; keep the live files-checked counter.
-5. **Biggest-folders view** — a simple visual breakdown (top folders
+6. **Biggest-folders view** — a simple visual breakdown (top folders
    by size) on the System tab or its own tab, so he sees where space
    goes before scanning.
-6. **Remember settings + window size** between runs (small JSON in
+7. **Remember settings + window size** between runs (small JSON in
    ~/DiskCleaner), including scan locations and thresholds.
-7. **Export a scan report** (txt/html) he can keep or share.
-8. **Scheduled quick scan** — optional weekly reminder inside the app
+8. **Export a scan report** (txt/html) he can keep or share.
+9. **Scheduled quick scan** — optional weekly reminder inside the app
    when caches pass a size threshold (e.g. NVIDIA DXCache > 5 GB).
 
 ## Done
