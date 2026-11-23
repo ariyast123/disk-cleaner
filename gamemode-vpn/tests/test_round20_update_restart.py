@@ -42,11 +42,13 @@ class FakeTimer:
 def test_helper_speaks_and_caps():
     lines = gui.update_helper_lines(r"C:\proj", r"C:\proj\dist\GameModeVPN.exe")
     body = "\n".join(lines)
-    assert "if %WAITS% GEQ 15 goto forceclose" in body
-    assert "echo GameMode VPN update: waiting for the app to close..." in body
+    assert "if %WAITS% GEQ 10 goto proceed" in body
+    assert "taskkill /F /IM GameModeVPN.exe" in body
+    assert body.index("taskkill /F /IM GameModeVPN.exe") < \
+        body.index(":waitloop")
+    assert "echo GameMode VPN update: closing any running copies..." in body
     assert "echo GameMode VPN update: building" in body
-    assert "after 30s" in body
-    print("PASS helper narrates its phases and caps the wait at ~30s")
+    print("PASS helper kills first, narrates, verifies gone briefly")
 
 
 def test_update_downloaded_no_modal_guaranteed_exit():
@@ -92,7 +94,7 @@ def test_update_downloaded_no_modal_guaranteed_exit():
         assert app._update_pending is True
         assert len(FakeTimer.started) == 1
         timer = FakeTimer.started[0]
-        assert timer.interval == 3.0 and timer.function is os._exit
+        assert timer.interval == 1.0 and timer.function is os._exit
         assert timer.args == (0,)
         print("PASS frozen update: no modal, helper started, exit guaranteed")
     finally:
