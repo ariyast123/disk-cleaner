@@ -111,7 +111,8 @@ def test_helper_lines():
     assert '> update_build.log' in body  # log exists from phase one
     assert 'call build.bat auto >> update_build.log 2>&1' in body
     assert 'taskkill /F /IM GameModeVPN.exe' in body
-    assert 'goto forceclose' in body and 'WAITS' in body
+    assert 'goto proceed' in body and 'WAITS' in body
+    assert 'taskkill /F /IM GameModeVPN.exe' in body
     assert 'echo [helper] building >> update_build.log' in body
     print("PASS helper logs phases, caps the wait, force-closes stale copies")
 
