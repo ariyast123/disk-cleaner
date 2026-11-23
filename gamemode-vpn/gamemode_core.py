@@ -434,6 +434,16 @@ class _PywinautoBackend:
         except Exception:
             control.click_input()
 
+    def close_window(self, window):
+        """Close Proton's window — the X button, not the app.
+        Proton keeps running in the tray and its service holds the
+        tunnel state; the window is only the UI. If closing is
+        refused, minimizing is the fallback."""
+        try:
+            window.close()
+        except Exception:
+            window.minimize()
+
 
 def _pick_button(buttons, wanted_names):
     """Exact (case-insensitive) name match wins — 'Connect' must
@@ -516,6 +526,19 @@ def auto_proton_action(action, backend=None, timeout=25.0):
                     backend.invoke(ctrl)
                 except Exception as exc:
                     return (False, f"clicking {name} failed ({type(exc).__name__})")
+                # The click is delivered. Give Proton a beat to
+                # register it, then close its window again: Ariya
+                # wants Proton's UI to flash for a moment only and
+                # never linger next to the game. Closing is cosmetic
+                # (the tunnel state lives in Proton's service), so
+                # it must never fail a click that already worked.
+                time.sleep(0.5)
+                close_window = getattr(backend, "close_window", None)
+                if close_window is not None:
+                    try:
+                        close_window(win)
+                    except Exception:
+                        pass
                 return (True, f"clicked {name} in Proton")
         if time.monotonic() >= deadline:
             break
