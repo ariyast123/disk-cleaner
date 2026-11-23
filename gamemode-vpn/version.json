@@ -1,5 +1,5 @@
 {
-  "version": "1.3.3",
-  "notes": "Test update - no changes",
-  "patch_notes": "Test update, published at Ariya's request to exercise the update flow. No changes to the app itself."
+  "version": "1.3.4",
+  "notes": "Update helper now opens in its own window - automatic updates fixed",
+  "patch_notes": "Found by Ariya's test (Nov 22, 2026): the app closed on Update but nothing else happened. The update helper was launched without a console window, and on his PC the batch died silently right after its first log line - while the very same file run by hand worked perfectly. The helper now launches with its own console window, exactly like a manual double-click. Note: to land on this version, click Update, let the app close, then double-click finish_update.bat in the project folder once - from the next update on, everything is automatic."
 }
