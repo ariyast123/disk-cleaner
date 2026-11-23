@@ -443,6 +443,12 @@ def collect_temps(port=8085, readers=None):
 class SessionTracker:
     """Turns (time, games, temps) ticks into finished session records."""
 
+    # A session's temperature series is kept for the graph: at the
+    # 3-second default poll this is ~30 minutes of full resolution;
+    # longer sessions thin out (every 2nd point) instead of growing
+    # the history file without bound.
+    MAX_SERIES_POINTS = 600
+
     def __init__(self, warn_cpu=95, warn_gpu=85, debounce_seconds=10.0):
         self.warn_cpu = warn_cpu
         self.warn_gpu = warn_gpu
@@ -457,6 +463,7 @@ class SessionTracker:
             "game": game,
             "start": ts,
             "samples": 0,
+            "series": [],
             "peak_cpu": None,
             "peak_gpu": None,
             "sec_above_cpu": 0.0,
@@ -472,6 +479,9 @@ class SessionTracker:
         record["end"] = ts
         record["duration_s"] = round(ts - record["start"], 1)
         record["sources"] = sorted(record["sources"])
+        # JSON-safe copy: [elapsed_s, cpu, gpu] per tick, None kept
+        # as None — a missing reading is a gap, never a guess.
+        record["series"] = [list(point) for point in record["series"]]
         record["sec_above_cpu"] = round(record["sec_above_cpu"], 1)
         record["sec_above_gpu"] = round(record["sec_above_gpu"], 1)
         self.session = None
@@ -495,6 +505,11 @@ class SessionTracker:
         self._last_ts = ts
         session = self.session
         session["samples"] += 1
+        series = session["series"]
+        series.append([round(ts - session["start"], 1), cpu, gpu])
+        if len(series) > self.MAX_SERIES_POINTS:
+            # Thin in place: keep the shape, halve the resolution.
+            series[:] = series[::2]
         if source:
             session["sources"].add(source)
         if cpu is not None:
@@ -552,6 +567,69 @@ class HeatWarner:
             self._since = None
             self._fired = False
         return False
+
+
+# ---------------------------------------------------------------------------
+# Session graph geometry (pure: the GUI and the tests share it)
+# ---------------------------------------------------------------------------
+
+def chart_points(samples, width=640, height=280, warn_cpu=95,
+                 warn_gpu=85):
+    """Map a session's [elapsed_s, cpu, gpu] samples onto canvas
+    coordinates.
+
+    -> {"cpu": [(x, y), ...], "gpu": [(x, y), ...],
+        "warn_cpu_y": float|None, "warn_gpu_y": float|None,
+        "grid": [(temp, y), ...], "t_max": float, "y_max": float}
+
+    A None temperature leaves that line with a gap at that tick —
+    never interpolated, never filled with a guess. Hostile or
+    malformed sample entries are skipped, never raised on.
+    """
+    left, right, top, bottom = 44, 12, 14, 26
+    cleaned = []
+    if not isinstance(samples, (list, tuple)):
+        samples = []
+    for point in samples:
+        if not isinstance(point, (list, tuple)) or len(point) != 3:
+            continue
+        try:
+            elapsed = float(point[0])
+            cpu = None if point[1] is None else float(point[1])
+            gpu = None if point[2] is None else float(point[2])
+        except (TypeError, ValueError):
+            continue
+        if elapsed < 0:
+            continue
+        cleaned.append((elapsed, cpu, gpu))
+    empty = {"cpu": [], "gpu": [], "warn_cpu_y": None,
+             "warn_gpu_y": None, "grid": [], "t_max": 0.0,
+             "y_max": 100.0}
+    if not cleaned:
+        return empty
+    t_max = max(point[0] for point in cleaned) or 1.0
+    temps = [value for point in cleaned
+             for value in (point[1], point[2]) if value is not None]
+    y_max = max(100.0, (max(temps) + 10.0) if temps else 100.0)
+
+    def x_of(elapsed):
+        return left + (elapsed / t_max) * (width - left - right)
+
+    def y_of(temp):
+        y = top + (1.0 - temp / y_max) * (height - top - bottom)
+        return max(top, min(height - bottom, y))
+
+    cpu_pts = [(x_of(point[0]), y_of(point[1])) for point in cleaned
+               if point[1] is not None]
+    gpu_pts = [(x_of(point[0]), y_of(point[2])) for point in cleaned
+               if point[2] is not None]
+    grid = [(mark, y_of(mark)) for mark in range(25, int(y_max), 25)]
+    return {"cpu": cpu_pts, "gpu": gpu_pts,
+            "warn_cpu_y": (y_of(warn_cpu) if warn_cpu is not None
+                           else None),
+            "warn_gpu_y": (y_of(warn_gpu) if warn_gpu is not None
+                           else None),
+            "grid": grid, "t_max": t_max, "y_max": y_max}
 
 
 # ---------------------------------------------------------------------------
