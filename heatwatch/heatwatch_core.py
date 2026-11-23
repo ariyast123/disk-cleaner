@@ -723,3 +723,51 @@ def find_lhm_exe(settings):
 
 def is_windows():
     return sys.platform.startswith("win")
+
+
+# ---------------------------------------------------------------------------
+# Live-graph support: a rolling sample buffer + polyline scaling
+# ---------------------------------------------------------------------------
+
+class SampleBuffer:
+    """The last N temperature samples, for the live sparkline."""
+
+    def __init__(self, capacity=120):
+        self.capacity = max(2, int(capacity))
+        self.samples = []
+
+    def push(self, ts, cpu, gpu):
+        self.samples.append((ts, cpu, gpu))
+        overflow = len(self.samples) - self.capacity
+        if overflow > 0:
+            del self.samples[:overflow]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def cpu_series(self):
+        return [cpu for _, cpu, _ in self.samples if cpu is not None]
+
+    def gpu_series(self):
+        return [gpu for _, _, gpu in self.samples if gpu is not None]
+
+
+def scale_series(values, width, height, vmin, vmax):
+    """Map values to (x, y) canvas points inside width x height.
+
+    y grows downward on a canvas, so the hottest value lands on
+    y=0. Fewer than two points cannot make a line -> [].
+    """
+    points = [v for v in values if v is not None]
+    if len(points) < 2 or width <= 0 or height <= 0:
+        return []
+    span = float(vmax) - float(vmin)
+    if span <= 0:
+        span = 1.0
+    step = width / float(len(points) - 1)
+    scaled = []
+    for idx, value in enumerate(points):
+        frac = (float(value) - float(vmin)) / span
+        frac = max(0.0, min(1.0, frac))
+        scaled.append((idx * step, height - frac * height))
+    return scaled
