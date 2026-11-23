@@ -118,3 +118,23 @@ same log. New test round 16 covers _pick_main_window, the
 backend's pick-and-restore with a fake pywinauto Application,
 and the helper's new lines. 16 rounds all pass, pyflakes clean.
 Published off-cycle by the web instance; baton untouched.
+
+## 2026-11-22 — v1.2.6 (off-cycle, at Ariya's direct request)
+
+Stealth session flow. Ariya: two windows popping up at game
+start (GameMode + Proton) is annoying, and he dared not close
+Proton's window because auto control used to break without it.
+Now: after a successful auto click, the driver waits half a
+second and closes the Proton window it used (backend
+close_window: window.close(), minimize as fallback). Only the
+window closes — Proton keeps running and its service holds the
+tunnel state. On failure paths the window stays open for the
+guided steps. A close failure never fails a worked click, and
+backends without close_window still work. GameMode's own side
+needed no change: the only deiconify in the app is the tray
+menu's Open action, so the session flow never raises its window.
+New test round 17 covers all of it. 17 rounds all pass, pyflakes
+clean. Note: the 1.2.4 -> 1.2.5 update again needed a manual
+finish_update run on his PC — that update was still executed by
+1.2.4's old uncapped, unlogged helper; the hardened helper ships
+in 1.2.5 and governs from this update on. Baton untouched.
