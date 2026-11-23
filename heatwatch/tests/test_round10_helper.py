@@ -31,8 +31,8 @@ def test_helper_lines():
 
 
 def test_version_is_1_1_0():
-    assert gui.VERSION == "1.2.0"
-    print("PASS app version is 1.2.0")
+    assert gui.VERSION == "1.2.1"
+    print("PASS app version is 1.2.1")
 
 
 def test_startup_command():
