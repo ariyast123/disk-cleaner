@@ -38,13 +38,13 @@ def test_helper_with_dist_launch():
     print("PASS helper is consistent when launched from dist")
 
 
-def test_version_is_122():
-    assert gui.VERSION == "1.2.2"
-    print("PASS app version is 1.2.2")
+def test_version_is_123():
+    assert gui.VERSION == "1.2.3"
+    print("PASS app version is 1.2.3")
 
 
 if __name__ == "__main__":
     test_helper_waits_builds_and_copies_back()
     test_helper_with_dist_launch()
-    test_version_is_122()
+    test_version_is_123()
     print("ROUND 14: ALL PASS")
