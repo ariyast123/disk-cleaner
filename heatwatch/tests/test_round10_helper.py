@@ -33,9 +33,18 @@ def test_helper_lines():
     print("PASS helper: kill-first, narration, log, copy-back, relaunch")
 
 
+def test_helper_launch_has_a_console():
+    src = open(os.path.join(os.path.dirname(__file__), "..",
+                            "heatwatch_app.py"),
+               encoding="utf-8").read()
+    assert "CREATE_NEW_CONSOLE" in src
+    assert '"DETACHED_PROCESS"' not in src
+    print("PASS helper launches with its own console window")
+
+
 def test_version_is_1_1_0():
-    assert gui.VERSION == "1.2.3"
-    print("PASS app version is 1.2.3")
+    assert gui.VERSION == "1.2.4"
+    print("PASS app version is 1.2.4")
 
 
 def test_startup_command():
@@ -53,6 +62,7 @@ def test_startup_command():
 
 def main():
     test_helper_lines()
+    test_helper_launch_has_a_console()
     test_version_is_1_1_0()
     test_startup_command()
     print("ROUND 10 ALL PASS")
