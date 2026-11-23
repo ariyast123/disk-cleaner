@@ -368,5 +368,65 @@ if "9.9.9" not in app.update_label.cget("text"):
     fails.append("update banner: label missing the version")
 app.update_banner.pack_forget()
 
+# --- 12) update helper: auto build + log, copy-back, relaunch launched --
+# (hotfix Nov 22, 2026: build.bat used to pause forever unattended)
+PROJ = os.path.join(HERE, "..")
+LAUNCHED = os.path.join("C:\\Users\\Ariya", "Desktop", "DiskCleaner.exe")
+lines = gui.update_helper_lines(PROJ, LAUNCHED)
+joined = "\n".join(lines)
+if "call build.bat auto > update_build.log 2>&1" not in joined:
+    fails.append("helper: build must run as 'call build.bat auto > update_build.log 2>&1'")
+if any(l.strip() == "call build.bat" for l in lines):
+    fails.append("helper: bare 'call build.bat' (no auto) would pause forever")
+if 'if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL' not in joined:
+    fails.append("helper: missing copy-back of the fresh exe over the launched copy")
+if 'start "" "%LAUNCHED%"' not in joined:
+    fails.append("helper: relaunch must start the launched copy, not dist")
+if 'start "" "%BUILT%"' in joined:
+    fails.append("helper: must not relaunch the dist exe directly")
+if f'set "LAUNCHED={LAUNCHED}"' not in joined:
+    fails.append("helper: LAUNCHED not set to the passed exe path")
+built = os.path.join(PROJ, "dist", "DiskCleaner.exe")
+if f'set "BUILT={built}"' not in joined:
+    fails.append("helper: BUILT not set to the dist exe path")
+if 'if exist "%LAUNCHED%" start "" "%LAUNCHED%"' not in joined:
+    fails.append("helper: build failure must fall back to relaunching the old copy")
+# build.bat itself: pause only when NOT called with "auto", on both paths
+with open(os.path.join(PROJ, "build.bat"), encoding="utf-8") as fh:
+    bat = fh.read()
+if bat.count('if /I not "%~1"=="auto" pause') != 2:
+    fails.append("build.bat: expected exactly 2 conditional pauses (success + error paths)")
+for _l in bat.splitlines():
+    if _l.strip() == "pause":
+        fails.append("build.bat: bare 'pause' would stall an unattended update")
+        break
+# _write_update_helper writes the same lines with the real launched exe
+HELPER_DIR = os.path.join(BASE, "helperproj")
+os.makedirs(HELPER_DIR, exist_ok=True)
+real_proj_folder = gui.project_folder
+real_popen2 = gui.subprocess.Popen
+popen_calls2 = []
+gui.project_folder = lambda: HELPER_DIR
+gui.subprocess.Popen = lambda args, **kw: popen_calls2.append(args)
+try:
+    app._write_update_helper()
+finally:
+    gui.project_folder = real_proj_folder
+    gui.subprocess.Popen = real_popen2
+helper_path = os.path.join(HELPER_DIR, "finish_update.bat")
+if not os.path.exists(helper_path):
+    fails.append("_write_update_helper: finish_update.bat not written")
+else:
+    with open(helper_path, encoding="utf-8") as fh:
+        written = fh.read()
+    if "call build.bat auto > update_build.log 2>&1" not in written:
+        fails.append("_write_update_helper: written helper lacks the auto build call")
+    if f'set "LAUNCHED={sys.executable}"' not in written:
+        fails.append("_write_update_helper: launched exe should be sys.executable")
+    if 'copy /Y "%BUILT%" "%LAUNCHED%"' not in written:
+        fails.append("_write_update_helper: written helper lacks the copy-back")
+if popen_calls2 != [["cmd", "/c", helper_path]]:
+    fails.append(f"_write_update_helper: helper not started detached: {popen_calls2}")
+
 app.destroy()
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
