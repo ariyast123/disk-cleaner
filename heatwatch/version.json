@@ -1,1 +1,5 @@
-{"notes":"Optimization: no more PowerShell spawn every poll when LHM is absent","patch_notes":"Optimization pass, no features changed. The WMI temperature route spawns PowerShell - the most expensive probe HeatWatch makes. When it comes back empty (LibreHardwareMonitor not running), the app now remembers the miss for 60 seconds instead of paying that spawn on every 3-second poll; a successful WMI read clears the miss immediately, and all merge results and source labels are exactly as before. New test round 17 covers the cache; all 17 rounds pass.","version":"1.2.1"}
+{
+  "version": "1.2.2",
+  "notes": "One-click updates: kill-first helper, no waiting, no manual steps",
+  "patch_notes": "The update flow is now truly one-click, at Ariya's request. The helper no longer waits politely for the app to close: its first move is to force-close every running copy of HeatWatch.exe, then verify they are gone (a short capped check), rebuild and reopen. The app itself exits within a second of the click. Test round 10 updated for the kill-first helper; all 17 rounds pass."
+}
