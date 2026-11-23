@@ -73,6 +73,84 @@ def log_path():
     return os.path.join(data_dir(), "gamemode.log")
 
 
+def history_path():
+    return os.path.join(data_dir(), "history.json")
+
+
+# ---------------------------------------------------------------------------
+# Session history: one record per finished game session, newest last,
+# capped so the file can never grow without bound. A corrupt or
+# foreign file degrades to an empty list, never an exception.
+# ---------------------------------------------------------------------------
+
+HISTORY_MAX_ENTRIES = 50
+
+
+def _clean_history_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    games = entry.get("games")
+    if not isinstance(games, list):
+        return None
+    names = [str(g).strip() for g in games if str(g).strip()]
+    if not names:
+        return None
+    try:
+        duration = int(entry.get("duration_seconds") or 0)
+        game_mode = int(entry.get("game_mode_seconds") or 0)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "games": names,
+        "started_at": str(entry.get("started_at", "")),
+        "duration_seconds": max(0, duration),
+        "game_mode_seconds": max(0, game_mode),
+        "game_mode_on": bool(entry.get("game_mode_on", False)),
+        "was_protected": bool(entry.get("was_protected", False)),
+        "restore_needed": bool(entry.get("restore_needed", False)),
+        "peak_state": str(entry.get("peak_state", "unknown")),
+    }
+
+
+def load_history(path=None):
+    path = path or history_path()
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    cleaned = []
+    for entry in data:
+        item = _clean_history_entry(entry)
+        if item is not None:
+            cleaned.append(item)
+    return cleaned
+
+
+def append_history(record, path=None, max_entries=HISTORY_MAX_ENTRIES):
+    """Append one session record, capped at max_entries (oldest drop
+    first). Atomic tmp+replace write; False when the file cannot be
+    written — the caller logs nothing, history is never load-bearing."""
+    entry = _clean_history_entry(record)
+    if entry is None:
+        return False
+    path = path or history_path()
+    entries = load_history(path)
+    entries.append(entry)
+    entries = entries[-max(1, int(max_entries)):]
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(entries, handle, indent=2)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Settings: load / save / normalize
 # ---------------------------------------------------------------------------
@@ -698,6 +776,10 @@ class Engine:
         self.active_games = set()
         self.was_protected = False
         self.session_start = None
+        self.session_start_wall = None  # wall-clock "YYYY-MM-DD HH:MM" for history
+        self.session_games = set()
+        self._session_states_seen = set()
+        self.completed_session = None   # record dict once a session ends
         self.game_mode_start = None
         self._gone_since = None
         self._last_blocked = False
@@ -723,6 +805,35 @@ class Engine:
             return 0.0
         return max(0.0, self._now() - self.game_mode_start)
 
+    def _build_session_record(self, vpn_state):
+        """The finished session, for history: games, wall-clock start,
+        length, how long Game Mode was on, and the best state reached
+        ('peak'): gaming > bare > blocked > protected > unknown.
+        Built while session_start is still set, so the durations are
+        real; returns None when no session was live."""
+        if self.session_start is None:
+            return None
+        if self.game_mode_start is not None:
+            peak = "gaming"
+        elif "bare" in self._session_states_seen:
+            peak = "bare"
+        elif "blocked" in self._session_states_seen:
+            peak = "blocked"
+        elif "protected" in self._session_states_seen:
+            peak = "protected"
+        else:
+            peak = "unknown"
+        return {
+            "games": sorted(self.session_games),
+            "started_at": self.session_start_wall or "",
+            "duration_seconds": int(self.session_seconds()),
+            "game_mode_seconds": int(self.game_mode_seconds()),
+            "game_mode_on": self.game_mode_start is not None,
+            "was_protected": self.was_protected,
+            "restore_needed": bool(self.was_protected and vpn_state != "protected"),
+            "peak_state": peak,
+        }
+
     # -- main entry --------------------------------------------------------
 
     def update(self, running_games, vpn_state):
@@ -736,9 +847,16 @@ class Engine:
 
         if running_games:
             self._gone_since = None
+            self.session_games |= running_games
+            self._session_states_seen.add(vpn_state)
             if self.mode in ("idle", "restore_needed"):
                 self.mode = "action_needed"
                 self.session_start = now
+                self.session_start_wall = time.strftime(
+                    "%Y-%m-%d %H:%M", time.localtime())
+                self.session_games = set(running_games)
+                self._session_states_seen = {vpn_state}
+                self.completed_session = None
                 self.game_mode_start = None
                 self.was_protected = (vpn_state == "protected")
                 self._session_blocked = False
@@ -767,7 +885,9 @@ class Engine:
                 debounce = float(self.settings.get("gone_debounce_seconds", 10.0))
                 if now - self._gone_since >= debounce:
                     events.append("game_ended")
+                    self.completed_session = self._build_session_record(vpn_state)
                     self.session_start = None
+                    self.session_start_wall = None
                     self.game_mode_start = None
                     self._gone_since = None
                     if self.was_protected and vpn_state != "protected":
