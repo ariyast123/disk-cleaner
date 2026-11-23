@@ -379,9 +379,17 @@ class _PywinautoBackend:
                     continue
             if pid is not None:
                 try:
-                    app = self._application_cls(backend="uia").connect(process=pid)
-                    win = app.top_window()
-                    if win.exists(timeout=1):
+                    app = self._application_cls(backend="uia").connect(
+                        process=pid, timeout=5)
+                    win = _pick_main_window(app.windows())
+                    if win is not None:
+                        # A minimized or tray-hidden main window
+                        # exposes no clickable buttons; surface it.
+                        try:
+                            if not win.is_visible():
+                                win.restore()
+                        except Exception:
+                            pass
                         return win
                 except Exception:
                     pass
@@ -446,7 +454,27 @@ def _pick_button(buttons, wanted_names):
     return None, None
 
 
-def auto_proton_action(action, backend=None, timeout=15.0):
+def _pick_main_window(windows):
+    """Proton's process owns several top-level windows (the main
+    UI, popups, notification shells); the main window is the one
+    exposing the most controls. top_window() proved unreliable on
+    Ariya's machine: it handed back a window with no usable
+    buttons while Proton's real window sat hidden, and the first
+    restore attempt failed with 'window was not found'. Pure
+    selection over duck-typed windows so tests can drive it."""
+    best = None
+    best_count = -1
+    for win in windows or []:
+        try:
+            count = len(win.descendants())
+        except Exception:
+            count = 0
+        if count > best_count:
+            best, best_count = win, count
+    return best
+
+
+def auto_proton_action(action, backend=None, timeout=25.0):
     """Click Proton's own button for `action` ('disconnect'/'connect').
 
     The window and its controls are re-scanned until the timeout:
