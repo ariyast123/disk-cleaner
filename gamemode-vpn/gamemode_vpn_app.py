@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.4"
+VERSION = "1.2.5"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -160,20 +160,38 @@ def update_helper_lines(project, launched_exe):
     exit, rebuild, then copy the fresh exe back over the copy that
     was actually launched (a taskbar pin may point at a standalone
     copy outside dist) and relaunch THAT path — so a pinned
-    shortcut can never resurrect an old version after an update."""
+    shortcut can never resurrect an old version after an update.
+
+    The wait is capped at ~60 seconds: the app that requested the
+    update has already closed itself, so any copy still alive after
+    that is a stale duplicate (five stacked copies once stalled an
+    update silently) and is force-closed. Every phase is written
+    into update_build.log from the first line, so a stall leaves
+    evidence instead of a missing file."""
     built = os.path.join(project, "dist", "GameModeVPN.exe")
     return [
         "@echo off",
         "title GameMode VPN update",
+        f'cd /d "{project}"',
+        'echo [helper] update started - waiting for GameMode VPN '
+        'to close > update_build.log',
+        "set /a WAITS=0",
         ":waitloop",
         'tasklist /FI "IMAGENAME eq GameModeVPN.exe" 2>NUL | '
         'find /I "GameModeVPN.exe" >NUL',
-        "if not errorlevel 1 (",
-        "  timeout /t 2 /nobreak >NUL",
-        "  goto waitloop",
-        ")",
-        f'cd /d "{project}"',
-        "call build.bat auto > update_build.log 2>&1",
+        "if errorlevel 1 goto allclosed",
+        "set /a WAITS+=1",
+        "if %WAITS% GEQ 30 goto forceclose",
+        "timeout /t 2 /nobreak >NUL",
+        "goto waitloop",
+        ":forceclose",
+        'echo [helper] copies still running after 60s - '
+        'closing them >> update_build.log',
+        'taskkill /F /IM GameModeVPN.exe >NUL 2>&1',
+        "timeout /t 2 /nobreak >NUL",
+        ":allclosed",
+        'echo [helper] building >> update_build.log',
+        "call build.bat auto >> update_build.log 2>&1",
         f'set "BUILT={built}"',
         f'set "LAUNCHED={launched_exe}"',
         'if exist "%BUILT%" (',
