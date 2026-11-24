@@ -7,6 +7,9 @@ cd /d "%~dp0"
 python -m pip install --upgrade customtkinter psutil pywinauto pystray pillow pyinstaller
 if errorlevel 1 goto :fail
 
+REM Branded exe icon: regenerate it if it is missing (a fresh clone
+REM or an update that dropped it still builds with the proper icon).
+if not exist gamemode_icon.ico python -c "import gamemode_core; gamemode_core.write_app_icon('gamemode_icon.ico')"
 set ICONARG=--icon gamemode_icon.ico
 if not exist gamemode_icon.ico set ICONARG=
 python -m PyInstaller --onefile --windowed --name GameModeVPN %ICONARG% --collect-all customtkinter --noconfirm gamemode_vpn_app.py
