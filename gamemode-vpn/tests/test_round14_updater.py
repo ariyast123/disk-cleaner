@@ -52,14 +52,14 @@ def test_helper_launch_has_a_console():
     print("PASS helper launches with its own console window")
 
 
-def test_version_is_130():
-    assert gui.VERSION == "1.3.5"
-    print("PASS app version is 1.3.5")
+def test_version_is_140():
+    assert gui.VERSION == "1.4.0"
+    print("PASS app version is 1.4.0")
 
 
 if __name__ == "__main__":
     test_helper_waits_builds_and_copies_back()
     test_helper_with_dist_launch()
     test_helper_launch_has_a_console()
-    test_version_is_130()
+    test_version_is_140()
     print("ROUND 14: ALL PASS")
