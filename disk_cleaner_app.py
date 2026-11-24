@@ -96,7 +96,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.4"
+VERSION = "1.2.5"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -1229,24 +1229,28 @@ class DiskCleanerApp(ctk.CTk):
         self.status.configure(text=f"Cleaning... 0 of {len(targets)} files processed")
 
         def worker():
-            moved, failed, freed = 0, 0, 0
+            sizes = {f.path: f.size for f in targets}
             log_lines = []
-            for i, f in enumerate(targets):
-                if self.cancel_event.is_set():
-                    break
-                try:
-                    send2trash(f.path)
-                    moved += 1
-                    freed += f.size
-                    log_lines.append(f"OK    {f.path}")
-                except Exception as exc:  # locked / permission / already gone
-                    failed += 1
-                    log_lines.append(f"SKIP  {f.path}  ({exc})")
-                if (i + 1) % 200 == 0:
-                    self.ui_queue.put(("clean_progress", i + 1, len(targets)))
+
+            def progress(done, total):
+                if done % 200 == 0 or done == total:
+                    self.ui_queue.put(("clean_progress", done, total))
+
+            moved, failed, processed = core.recycle_files(
+                [f.path for f in targets], trash_one=send2trash,
+                cancel_event=self.cancel_event, progress_cb=progress)
+            failed_map = dict(failed)
+            for p in [f.path for f in targets][:processed]:
+                if p in failed_map:
+                    log_lines.append(f"SKIP  {p}  ({failed_map[p]})")
+                else:
+                    log_lines.append(f"OK    {p}")
+            freed = sum(sizes[p] for p in [f.path for f in targets][:processed]
+                        if p not in failed_map)
             self._write_log(log_lines)
-            remaining = len(targets) - moved - failed
-            self.ui_queue.put(("clean_done", targets, moved, failed, freed, remaining))
+            remaining = len(targets) - processed
+            self.ui_queue.put(("clean_done", targets, moved, len(failed),
+                               freed, remaining))
 
         threading.Thread(target=worker, daemon=True).start()
 
