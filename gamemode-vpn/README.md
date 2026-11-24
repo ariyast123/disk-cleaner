@@ -77,6 +77,16 @@ HISTORY card in the main window. The file is capped at 50 entries
 (oldest drop first) and a corrupt file simply shows as empty history;
 history is never load-bearing, so a write failure is silently skipped.
 
+## Ping proof (v1.4.0)
+
+A "Ping proof" switch in Settings (off by default — pinging
+contacts the chosen host, default `8.8.8.8`) plus a host field.
+Once Game Mode turns on, the app measures the real ping (average
+of 3 echoes) and shows it in a new Ping row in the sidebar and in
+the status line, and records it in the session history. A host
+that does not answer shows "no answer" — never a guess. The host
+setting only accepts a hostname or an IP address.
+
 ## Updates
 
 GameMode updates itself through GitHub, like Disk Cleaner: on
