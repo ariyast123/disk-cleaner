@@ -52,3 +52,10 @@ the weekly digest job reads the last 7 days and posts them in chat
 
 - Test update at Ariya's request, to exercise the fixed
   automatic update flow. No changes to the app itself.
+
+## 2026-11-23 — v1.2.4
+
+- After an update, the app now shows a small "What's new" window
+  on the next launch with the new version's patch notes.
+- The window appears exactly once and has a Close button; a note
+  saved for a different version is cleaned up without showing.
