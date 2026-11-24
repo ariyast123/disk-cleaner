@@ -15,6 +15,7 @@ Run:  python disk_cleaner_app.py
 Build: build.bat  (creates dist\\DiskCleaner.exe)
 """
 
+import json
 import os
 import queue
 import shutil
@@ -95,7 +96,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -113,7 +114,8 @@ def parse_version(text):
 
 
 def fetch_update_info(repo, timeout=10):
-    """Return {'version': ..., 'notes': ...} from the repo, or None."""
+    """Return {'version': ..., 'notes': ..., 'patch_notes': ...} from
+    the repo, or None."""
     import json
     import urllib.request
 
@@ -167,6 +169,78 @@ def apply_update_files(project_dir, files):
         with open(tmp, "wb") as fh:
             fh.write(data)
         os.replace(tmp, os.path.join(project_dir, name))
+
+
+# ----------------------------------------------------------------------
+# What's New window: when an update is applied, the target version's
+# patch notes are saved to ~/DiskCleaner/whats_new.json; on the next
+# launch the running app shows them once in a small closable window
+# and deletes the file, so the window appears exactly once.
+# ----------------------------------------------------------------------
+def whats_new_path():
+    return os.path.join(os.path.expanduser("~"), "DiskCleaner",
+                        "whats_new.json")
+
+
+def save_whats_new(version, notes, path=None):
+    """Save the patch notes for `version` to show once on next launch.
+    Never raises: a failed save just means no What's New window."""
+    try:
+        target = path or whats_new_path()
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            json.dump({"version": version, "notes": notes}, fh)
+        return True
+    except OSError:
+        return False
+
+
+def load_whats_new(path=None):
+    """Return {'version': ..., 'notes': ...} or None when there is no
+    valid pending note (missing file, bad JSON, empty notes)."""
+    try:
+        with open(path or whats_new_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    version = data.get("version")
+    notes = data.get("notes")
+    if not isinstance(version, str) or not version.strip():
+        return None
+    if not isinstance(notes, str) or not notes.strip():
+        return None
+    return {"version": version.strip(), "notes": notes.strip()}
+
+
+def clear_whats_new(path=None):
+    """Delete the pending note, if any. Never raises."""
+    try:
+        os.remove(path or whats_new_path())
+    except OSError:
+        pass
+
+
+def show_whats_new_dialog(parent, version, notes):
+    """Small closable window with the new version's patch notes."""
+    win = ctk.CTkToplevel(parent)
+    win.title(f"What's new in Disk Cleaner {version}")
+    win.geometry("520x360")
+    win.minsize(420, 280)
+    win.transient(parent)
+    ctk.CTkLabel(
+        win, text=f"Disk Cleaner {version} - what's new",
+        font=ctk.CTkFont(size=15, weight="bold"),
+    ).pack(anchor="w", padx=16, pady=(14, 6))
+    box = ctk.CTkTextbox(win, wrap="word")
+    box.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+    box.insert("1.0", notes)
+    box.configure(state="disabled")
+    ctk.CTkButton(win, text="Close", width=120,
+                  command=win.destroy).pack(pady=(0, 14))
+    win.focus_set()
+    return win
 
 
 def project_folder():
@@ -244,11 +318,13 @@ class DiskCleanerApp(ctk.CTk):
         self.custom_folders = []
         self._filter_after = None
         self.update_info = None
+        self._whats_new_window = None
 
         self._build_sidebar()
         self._build_main()
         self._update_drive_label()
         self.after(100, self._poll_queue)
+        self.after(500, self._maybe_show_whats_new)
         if UPDATE_REPO:
             threading.Thread(target=self._check_update_worker, daemon=True).start()
 
@@ -279,6 +355,22 @@ class DiskCleanerApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Self-update (GitHub): check on startup, banner, one-click apply.
     # ------------------------------------------------------------------
+    def _maybe_show_whats_new(self):
+        """Show the pending What's New note exactly once: the file is
+        deleted as soon as it is read, and the window only appears
+        when the note's version is the version now running."""
+        info = load_whats_new()
+        if info is None:
+            return
+        clear_whats_new()
+        if info["version"] != VERSION:
+            return
+        try:
+            self._whats_new_window = show_whats_new_dialog(
+                self, info["version"], info["notes"])
+        except Exception:
+            pass
+
     def _check_update_worker(self):
         info = fetch_update_info(UPDATE_REPO)
         if info and parse_version(info["version"]) > parse_version(VERSION):
@@ -331,6 +423,11 @@ class DiskCleanerApp(ctk.CTk):
                 "Update failed", f"Could not write the new files:\n{exc}"
             )
             return
+        # Remember this version's patch notes so the next launch can
+        # show them once in the What's New window.
+        notes = (self.update_info.get("patch_notes") or "").strip()
+        if notes:
+            save_whats_new(self.update_info["version"], notes)
         if getattr(sys, "frozen", False):
             self._write_update_helper()
             self.status.configure(
