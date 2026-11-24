@@ -89,3 +89,12 @@ helper; all 17 rounds pass.
 
 - Test update at Ariya's request, to exercise the fixed
   automatic update flow. No changes to the app itself.
+
+## 2026-11-23 — v1.3.0
+
+Custom games in the UI, like GameMode has: an Add game button
+on the Watched Games list takes a name and its process names
+(comma separated) and watches the game like the built-in
+ones. Custom games get a × on their row to remove them; the
+five built-in games cannot be removed. New test round 18
+covers adding, duplicates, and removing; all 18 rounds pass.
