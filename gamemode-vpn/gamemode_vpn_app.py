@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.3.6"
+VERSION = "1.4.0"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -249,6 +249,8 @@ class GameModeApp(ctk.CTk):
         self._start_minimized = bool(start_minimized)
         self._pulse_phase = False
         self._log_lines = []
+        self._ping_pending = False  # a ping measurement is in flight
+        self._ping_failed = False   # the last measurement got no answer
 
         self.title("GameMode VPN")
         try:
@@ -325,7 +327,8 @@ class GameModeApp(ctk.CTk):
         info.pack(fill="x", padx=18, pady=(2, 14))
         self.info_rows = {}
         for key, label in (("vpn", "VPN"), ("ks", "Kill switch"),
-                           ("game", "Active game"), ("session", "Session")):
+                           ("game", "Active game"), ("session", "Session"),
+                           ("ping", "Ping")):
             row = ctk.CTkFrame(info, fg_color="transparent")
             row.pack(fill="x", padx=14, pady=5)
             ctk.CTkLabel(row, text=label, width=86, anchor="w",
@@ -455,6 +458,25 @@ class GameModeApp(ctk.CTk):
                       variable=self.start_win_var, progress_color=VIOLET,
                       font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT,
                       command=self._save_toggles).pack(anchor="w", padx=18, pady=5)
+        self.ping_proof_var = tk.BooleanVar(value=bool(self.settings["ping_proof"]))
+        ctk.CTkSwitch(settings_card,
+                      text="Ping proof — measure the real ping once Game Mode is on",
+                      variable=self.ping_proof_var, progress_color=VIOLET,
+                      font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT,
+                      command=self._save_toggles).pack(anchor="w", padx=18, pady=5)
+        ping_row = ctk.CTkFrame(settings_card, fg_color="transparent")
+        ping_row.pack(fill="x", padx=18, pady=(2, 8))
+        ctk.CTkLabel(ping_row, text="Ping host:", font=ctk.CTkFont("Segoe UI", 12),
+                     text_color=MUTED).pack(side="left")
+        self.ping_host_var = tk.StringVar(value=str(self.settings["ping_host"]))
+        self.ping_host_entry = ctk.CTkEntry(ping_row, textvariable=self.ping_host_var,
+                                            width=140, fg_color=BG,
+                                            border_color=PANEL_EDGE, text_color=TEXT)
+        self.ping_host_entry.pack(side="left", padx=8)
+        self.ping_host_entry.bind("<FocusOut>", lambda _e: self._save_ping_host())
+        self.ping_host_entry.bind("<Return>", lambda _e: self._save_ping_host())
+        ctk.CTkLabel(ping_row, text="(off by default — pinging contacts this host)",
+                     font=ctk.CTkFont("Segoe UI", 11), text_color=FAINT).pack(side="left")
 
         path_row = ctk.CTkFrame(settings_card, fg_color="transparent")
         path_row.pack(fill="x", padx=18, pady=(8, 14))
@@ -593,11 +615,24 @@ class GameModeApp(ctk.CTk):
         self.settings["auto_launch_proton"] = bool(self.auto_launch_var.get())
         self.settings["auto_mode"] = bool(self.auto_mode_var.get())
         self.settings["minimize_to_tray"] = bool(self.tray_var.get())
+        self.settings["ping_proof"] = bool(self.ping_proof_var.get())
         want_start = bool(self.start_win_var.get())
         if want_start != bool(self.settings["start_with_windows"]):
             self.settings["start_with_windows"] = want_start
             self._apply_start_with_windows(want_start)
         core.save_settings(self.settings)
+
+    def _save_ping_host(self):
+        """Save the ping host from the entry (on Enter / focus out).
+        The value is cleaned first, so a typo can never smuggle
+        anything odd into the ping command — and the entry shows
+        the cleaned value back."""
+        host = core.clean_ping_host(self.ping_host_var.get())
+        self.ping_host_var.set(host)
+        if host != self.settings.get("ping_host"):
+            self.settings["ping_host"] = host
+            core.save_settings(self.settings)
+            self._log(f"Ping host set to {host}")
 
     def _apply_start_with_windows(self, enable):
         try:
@@ -838,6 +873,8 @@ class GameModeApp(ctk.CTk):
                     self._update_downloaded(item[1])
                 elif item[0] == "auto_result":
                     self._auto_result(item[1], item[2], item[3])
+                elif item[0] == "ping_result":
+                    self._apply_ping_result(item[1])
                 elif item[0] == "tray_show":
                     self._show_from_tray()
                 elif item[0] == "tray_quit":
@@ -868,6 +905,8 @@ class GameModeApp(ctk.CTk):
         if event.startswith("game_started:"):
             name = event.split(":", 1)[1]
             self._log(f"Game detected: {name}")
+            self._ping_pending = False
+            self._ping_failed = False
             if self.settings["auto_launch_proton"]:
                 self._launch_once_for_session()
         elif event == "action_needed":
@@ -880,10 +919,13 @@ class GameModeApp(ctk.CTk):
         elif event == "game_mode_on":
             self._log("GAME MODE ON — you are bare, good to play")
             self._auto_marks.pop("disconnect", None)
+            self._maybe_measure_ping()
         elif event == "game_ended":
             self._log("Game closed")
             self._launched_session = None
             self._auto_marks.pop("disconnect", None)
+            self._ping_pending = False
+            self._ping_failed = False
             record = self.engine.completed_session
             self.engine.completed_session = None
             if record:
@@ -935,6 +977,39 @@ class GameModeApp(ctk.CTk):
             return
         self._log(f"Auto mode could not {action} ({detail}) — the steps above still work")
 
+    # ------------------------------------------------------------------
+    # Ping proof: once Game Mode is on, measure the real ping to the
+    # configured host (off by default — it contacts that host) and
+    # show it in the sidebar. Runs in a thread; a host that does
+    # not answer is shown as 'no answer', never guessed.
+    # ------------------------------------------------------------------
+
+    def _maybe_measure_ping(self):
+        if not self.settings.get("ping_proof"):
+            return
+        host = self.settings.get("ping_host") or core.DEFAULT_PING_HOST
+        self._ping_pending = True
+        self._ping_failed = False
+        self._refresh_status()
+        self._log(f"Measuring ping to {host}…")
+
+        def worker():
+            ms = core.measure_ping(host)
+            self.msg_queue.put(("ping_result", ms))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_ping_result(self, ms):
+        self._ping_pending = False
+        if ms is None:
+            self._ping_failed = True
+            self._log("Ping: no answer from the host")
+        else:
+            self._ping_failed = False
+            self.engine.note_ping(ms)
+            self._log(f"Ping to {self.settings.get('ping_host')}: {ms} ms")
+        self._refresh_status()
+
     def _launch_once_for_session(self):
         marker = self.engine.session_start or "restore"
         if self._launched_session != marker:
@@ -948,7 +1023,12 @@ class GameModeApp(ctk.CTk):
     def _status_display(self):
         mode, state = self.engine.mode, self.engine.vpn_state
         if mode == "gaming":
-            return CYAN, "GAME MODE", "VPN off on purpose — ping is all yours"
+            sub = "VPN off on purpose — ping is all yours"
+            if self.engine.session_ping_ms is not None:
+                sub = (f"VPN off on purpose — ping to "
+                       f"{self.settings.get('ping_host')}: "
+                       f"{self.engine.session_ping_ms} ms")
+            return CYAN, "GAME MODE", sub
         if mode == "action_needed":
             return AMBER, "ACTION NEEDED", "A game is up but Proton is still in the way"
         if mode == "restore_needed" or (self.manual_restore and state != "protected"):
@@ -977,6 +1057,20 @@ class GameModeApp(ctk.CTk):
             "blocked": "ON — blocking", "unknown": "—"}.get(state, "—"))
         games = ", ".join(sorted(self.engine.active_games)) or "—"
         self.info_rows["game"].configure(text=games)
+
+        if not self.settings.get("ping_proof"):
+            ping_text = "off"
+        elif self.engine.session_start is None:
+            ping_text = "—"
+        elif self.engine.session_ping_ms is not None:
+            ping_text = f"{self.engine.session_ping_ms} ms"
+        elif self._ping_failed:
+            ping_text = "no answer"
+        elif self._ping_pending:
+            ping_text = "measuring…"
+        else:
+            ping_text = "—"
+        self.info_rows["ping"].configure(text=ping_text)
 
         steps = self.engine.current_steps()
         if self.manual_restore and state != "protected" and self.engine.mode == "idle":
@@ -1041,7 +1135,11 @@ class GameModeApp(ctk.CTk):
         duration = fmt_duration(entry["duration_seconds"])
         mode = "Game Mode on" if entry["game_mode_on"] else "Game Mode off"
         restore = "restore needed" if entry["restore_needed"] else "no restore needed"
-        return f"{games}  ·  {when}  ·  {duration}  ·  {mode}, {restore}"
+        parts = [f"{games}  ·  {when}  ·  {duration}",
+                 f"{mode}, {restore}"]
+        if entry.get("ping_ms") is not None:
+            parts.append(f"ping {entry['ping_ms']} ms")
+        return "  ·  ".join(parts)
 
     def _refresh_history(self):
         entries = core.load_history()
