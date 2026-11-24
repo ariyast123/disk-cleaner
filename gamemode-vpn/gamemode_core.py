@@ -20,9 +20,11 @@ machine and the matchers take plain data, so tests inject fakes.
 
 import fnmatch
 import json
+import math
 import os
 import re
 import subprocess
+import sys
 import time
 
 # ---------------------------------------------------------------------------
@@ -58,6 +60,8 @@ def default_settings():
         "adapter_keywords": ["proton"],
         "proton_path": "",          # "" = auto-detect
         "start_with_windows": False,
+        "ping_proof": False,        # measure the real ping once Game Mode is on
+        "ping_host": "8.8.8.8",     # host the ping contacts (only when ping_proof)
     }
 
 
@@ -101,7 +105,7 @@ def _clean_history_entry(entry):
         game_mode = int(entry.get("game_mode_seconds") or 0)
     except (TypeError, ValueError):
         return None
-    return {
+    cleaned = {
         "games": names,
         "started_at": str(entry.get("started_at", "")),
         "duration_seconds": max(0, duration),
@@ -111,6 +115,17 @@ def _clean_history_entry(entry):
         "restore_needed": bool(entry.get("restore_needed", False)),
         "peak_state": str(entry.get("peak_state", "unknown")),
     }
+    # Ping proof is optional and new: keep the key only when a real
+    # measurement was recorded, so older records round-trip unchanged.
+    ping_ms = entry.get("ping_ms")
+    if ping_ms is not None:
+        try:
+            ping_ms = max(0, int(ping_ms))
+        except (TypeError, ValueError):
+            ping_ms = None
+        if ping_ms is not None:
+            cleaned["ping_ms"] = ping_ms
+    return cleaned
 
 
 def load_history(path=None):
@@ -164,6 +179,21 @@ def _clamp(value, low, high, fallback):
     return max(low, min(high, number))
 
 
+_HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
+DEFAULT_PING_HOST = "8.8.8.8"
+
+
+def clean_ping_host(value):
+    """A safe ping target: a hostname or an IPv4 address, nothing
+    else. Anything odd (spaces, slashes, shell metacharacters,
+    empty) falls back to the default — the host is passed straight
+    to the ping command, so it must never carry an injection."""
+    host = str(value or "").strip()
+    if not host or ".." in host or not _HOST_RE.match(host):
+        return DEFAULT_PING_HOST
+    return host
+
+
 def normalize_settings(raw):
     """Merge user data over the defaults and validate every field."""
     settings = default_settings()
@@ -178,6 +208,8 @@ def normalize_settings(raw):
     if raw.get("kill_switch_seen") in (True, False):
         settings["kill_switch_seen"] = raw["kill_switch_seen"]
     settings["start_with_windows"] = bool(raw.get("start_with_windows", False))
+    settings["ping_proof"] = bool(raw.get("ping_proof", False))
+    settings["ping_host"] = clean_ping_host(raw.get("ping_host"))
     if isinstance(raw.get("proton_path"), str):
         settings["proton_path"] = raw["proton_path"].strip()
     keywords = raw.get("adapter_keywords")
@@ -362,6 +394,62 @@ def ping_host(host, timeout_ms=700):
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Ping proof: the average round-trip to a chosen host, measured once
+# Game Mode is on, so the improvement is visible instead of claimed.
+# Off by default (it contacts the host). A host that does not answer
+# is reported as None — never a guess, never a stale number.
+# ---------------------------------------------------------------------------
+
+def parse_ping_output(text):
+    """Average round-trip ms from ping output, or None.
+
+    Windows: 'Average = 12ms' ('Average = <1ms' -> 0).
+    Linux:   'rtt min/avg/max/mdev = 0.123/12.345/20.0/1.2 ms'.
+    A run with no replies (or no output at all) has no average
+    line, so it is None."""
+    if not text:
+        return None
+    match = re.search(r"Average\s*=\s*(<?)(\d+)\s*ms", text)
+    if match:
+        # "Average = <1ms" means sub-millisecond: report 0, not 1
+        return 0 if match.group(1) == "<" else int(match.group(2))
+    match = re.search(
+        r"rtt min/avg/max/mdev\s*=\s*[\d.]+/([\d.]+)/[\d.]+/[\d.]+\s*ms", text)
+    if match:
+        try:
+            return int(round(float(match.group(1))))
+        except ValueError:
+            return None
+    return None
+
+
+def measure_ping(host, count=3, timeout_ms=1000):
+    """Average ping to `host` in ms, or None when the host does not
+    answer / ping cannot run. Sends `count` echoes; the average
+    smooths a single slow packet. A host that fails validation is
+    refused (None) — the probe never pings a different host than
+    the one it was asked for. Never raises."""
+    host = str(host or "").strip()
+    if not host or ".." in host or not _HOST_RE.match(host):
+        return None
+    count = max(1, int(count))
+    if sys.platform == "win32":
+        cmd = ["ping", "-n", str(count), "-w",
+               str(max(1, int(timeout_ms))), host]
+    else:
+        cmd = ["ping", "-c", str(count), "-W",
+               str(max(1, math.ceil(timeout_ms / 1000.0))), host]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return parse_ping_output(result.stdout)
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -793,6 +881,7 @@ class Engine:
         self.session_start = None
         self.session_start_wall = None  # wall-clock "YYYY-MM-DD HH:MM" for history
         self.session_games = set()
+        self.session_ping_ms = None  # ping proof measured for this session
         self._session_states_seen = set()
         self.completed_session = None   # record dict once a session ends
         self.game_mode_start = None
@@ -819,6 +908,20 @@ class Engine:
         if self.game_mode_start is None:
             return 0.0
         return max(0.0, self._now() - self.game_mode_start)
+
+    def note_ping(self, ms):
+        """Record the ping measured for the live session (int ms, or
+        None to clear). Ignored when no session is live, so a late
+        result can never attach to the wrong session."""
+        if self.session_start is None:
+            return
+        if ms is None:
+            self.session_ping_ms = None
+            return
+        try:
+            self.session_ping_ms = max(0, int(ms))
+        except (TypeError, ValueError):
+            self.session_ping_ms = None
 
     def _build_session_record(self, vpn_state):
         """The finished session, for history: games, wall-clock start,
@@ -847,6 +950,7 @@ class Engine:
             "was_protected": self.was_protected,
             "restore_needed": bool(self.was_protected and vpn_state != "protected"),
             "peak_state": peak,
+            "ping_ms": self.session_ping_ms,
         }
 
     # -- main entry --------------------------------------------------------
@@ -870,6 +974,7 @@ class Engine:
                 self.session_start_wall = time.strftime(
                     "%Y-%m-%d %H:%M", time.localtime())
                 self.session_games = set(running_games)
+                self.session_ping_ms = None
                 self._session_states_seen = {vpn_state}
                 self.completed_session = None
                 self.game_mode_start = None
