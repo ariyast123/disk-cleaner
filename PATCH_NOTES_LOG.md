@@ -59,3 +59,13 @@ the weekly digest job reads the last 7 days and posts them in chat
   on the next launch with the new version's patch notes.
 - The window appears exactly once and has a Close button; a note
   saved for a different version is cleaned up without showing.
+
+## 2026-11-23 — v1.2.5
+
+- Cleaning is much faster: files now go to the Recycle Bin in
+  batches (one shell operation for many files) instead of one
+  call per file, so a large clean finishes much faster.
+- A locked or in-use file is still reported individually, and
+  the per-file cleanup log is unchanged.
+- A cancelled clean still leaves the unprocessed files listed
+  and ticked, so it can be resumed.
