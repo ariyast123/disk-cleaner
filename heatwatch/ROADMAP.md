@@ -19,9 +19,12 @@
 4. **LHM autostart helper** — a guided one-time setup that
    registers LibreHardwareMonitor to start elevated at boot
    (Task Scheduler), so HeatWatch always has its source.
-5. **Idle baseline** — track idle temperatures outside sessions
-   and show them next to gaming peaks; a rising idle baseline
-   is an early dust/paste signal.
+5. **Idle baseline** — DONE (v1.3.1, Nov 23, 2026). Idle
+   temperatures are sampled once a minute outside sessions
+   (kept a week); the 24-hour median shows in the repaste
+   verdict card next to the gaming peaks, and the five
+   minutes after a session ends are skipped so post-game
+   heat never pollutes it.
 6. **Fan-speed capture** — where LHM exposes fan RPM, record
    the session's fan range alongside temps (a maxed fan with
    rising temps strengthens the repaste verdict).
