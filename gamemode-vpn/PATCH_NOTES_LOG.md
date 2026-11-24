@@ -256,3 +256,11 @@ kill-first helper; all 23 rounds pass.
 
 - Test update at Ariya's request, to exercise the fixed
   automatic update flow. No changes to the app itself.
+
+## 2026-11-23 — v1.3.6
+
+- Proper exe icon: a violet rounded square with a cyan lightning
+  bolt, matching the app's look. It shows on the exe, the window,
+  and the system tray. The icon is drawn by gamemode_core
+  (write_app_icon) and build.bat regenerates it if it ever goes
+  missing, so a fresh clone still builds branded.
