@@ -1,5 +1,1 @@
-{
-  "version": "1.3.5",
-  "notes": "Test update - no changes",
-  "patch_notes": "Test update, published at Ariya's request to exercise the fixed automatic update flow end to end. No changes to the app itself."
-}
+{"notes":"Proper exe icon: violet square with a cyan bolt","patch_notes":"GameMode VPN now has its own exe icon — a violet rounded square with a cyan lightning bolt, matching the app's look. The icon shows on the exe, the window, and the system tray, and build.bat regenerates it if it ever goes missing.","version":"1.3.6"}
