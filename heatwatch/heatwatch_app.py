@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.2.5"
+VERSION = "1.3.0"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -541,10 +541,36 @@ class HeatWatchApp(ctk.CTk):
                                   border_width=1, corner_radius=14)
         games_card.grid(row=5, column=0, sticky="ew", padx=18,
                         pady=(0, 10))
-        ctk.CTkLabel(games_card, text="WATCHED GAMES",
+        games_header = ctk.CTkFrame(games_card, fg_color="transparent")
+        games_header.pack(fill="x", padx=16, pady=(12, 4))
+        ctk.CTkLabel(games_header, text="WATCHED GAMES",
                      font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=MUTED).pack(anchor="w", padx=16,
-                                            pady=(12, 4))
+                     text_color=MUTED).pack(side="left")
+        ctk.CTkButton(games_header, text="+ Add game", width=96,
+                      height=28, corner_radius=9, fg_color=CARD,
+                      hover_color="#1D2347", text_color=TEXT,
+                      font=ctk.CTkFont(size=12),
+                      command=self._toggle_add_form).pack(side="right")
+        self._add_form_visible = False
+        self.add_form = ctk.CTkFrame(games_card, fg_color=CARD,
+                                     corner_radius=12)
+        self.new_name = ctk.CTkEntry(
+            self.add_form, placeholder_text="Game name (e.g. Valorant)",
+            fg_color=BG, border_color=PANEL_EDGE, text_color=TEXT)
+        self.new_name.pack(side="left", fill="x", expand=True,
+                           padx=(12, 6), pady=10)
+        self.new_exes = ctk.CTkEntry(
+            self.add_form,
+            placeholder_text="Process names, comma separated "
+                             "(e.g. valorant.exe)",
+            fg_color=BG, border_color=PANEL_EDGE, text_color=TEXT)
+        self.new_exes.pack(side="left", fill="x", expand=True,
+                           padx=6, pady=10)
+        ctk.CTkButton(self.add_form, text="Add", width=64, height=30,
+                      corner_radius=9, fg_color=VIOLET,
+                      hover_color="#6A4DF0", text_color="white",
+                      command=self._add_game).pack(side="left",
+                                                   padx=(6, 12), pady=10)
         self.games_frame = ctk.CTkFrame(games_card,
                                         fg_color="transparent")
         self.games_frame.pack(fill="x", padx=8, pady=(0, 10))
@@ -661,6 +687,12 @@ class HeatWatchApp(ctk.CTk):
             if game["enabled"]:
                 switch.select()
             switch.pack(side="right", padx=10)
+            if not game.get("builtin"):
+                ctk.CTkButton(row, text="✕", width=30, height=30,
+                              corner_radius=8, fg_color="transparent",
+                              hover_color="#1D2347", text_color=MUTED,
+                              command=lambda g=game: self._remove_game(g)
+                              ).pack(side="right", padx=(0, 8))
 
     # -- Sampling -------------------------------------------------------------
 
@@ -1059,6 +1091,36 @@ class HeatWatchApp(ctk.CTk):
             if game["name"] == name:
                 game["enabled"] = not game["enabled"]
         self._save_settings()
+
+    def _toggle_add_form(self):
+        if self._add_form_visible:
+            self.add_form.pack_forget()
+            self._add_form_visible = False
+        else:
+            self.add_form.pack(fill="x", padx=8, pady=(4, 2),
+                               after=self.games_frame.master
+                               .winfo_children()[0])
+            self._add_form_visible = True
+
+    def _add_game(self):
+        game, error = core.add_custom_game(
+            self.settings, self.new_name.get(), self.new_exes.get())
+        if error:
+            self._log(error)
+            return
+        self._save_settings()
+        self.new_name.delete(0, "end")
+        self.new_exes.delete(0, "end")
+        self.add_form.pack_forget()
+        self._add_form_visible = False
+        self._render_games()
+        self._log(f"Added {game['name']} to the watch list")
+
+    def _remove_game(self, game):
+        if core.remove_custom_game(self.settings, game["name"]):
+            self._save_settings()
+            self._render_games()
+            self._log(f"Removed {game['name']} from the watch list")
 
     def _toggle_tray(self):
         self.settings["minimize_to_tray"] = bool(self.tray_switch.get())
