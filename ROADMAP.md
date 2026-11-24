@@ -29,7 +29,7 @@ confirmation, no admin requirement, UI text in English.
    path before relaunching, so a pinned or standalone copy can
    never resurrect an old version. Covered by new tests in round 5
    (section 12); full suite green.
-3. **What's New window after updating (Ariya's ask, Nov 21, 2026).** When the app finishes updating itself, the
+3. **What's New window after updating — DONE (Nov 23, 2026, v1.2.4).** When the app finishes updating itself, the
    next launch shows a small closable window with the new version's
    patch notes. Design: version.json gains a `patch_notes` field (a
    few short lines) next to the short banner `notes`. When he clicks
@@ -41,6 +41,9 @@ confirmation, no admin requirement, UI text in English.
    version.json on every publish and appends the same notes to
    PATCH_NOTES_LOG.md for the weekly digest. Daily chat messages
    carry no changelog (his rule) — only the new version number.
+   Implemented exactly as designed, with a new test round 7
+   (save/load, bad-file rejection, startup show-once, stale-version
+   cleanup, update-hook save); full suite green.
 4. **Faster cleaning** — the first real clean (36,776 files) took
    ~25 minutes because each file is a separate Recycle Bin shell call.
    Batch the recycle operations (one shell operation for many files)
