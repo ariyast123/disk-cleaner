@@ -264,3 +264,17 @@ kill-first helper; all 23 rounds pass.
   and the system tray. The icon is drawn by gamemode_core
   (write_app_icon) and build.bat regenerates it if it ever goes
   missing, so a fresh clone still builds branded.
+
+## 2026-11-23 — v1.4.0
+
+Ping proof (roadmap item 5): a new "Ping proof" switch in Settings
+(off by default — pinging contacts the chosen host, default
+8.8.8.8) plus a host field. Once Game Mode turns on, the app
+measures the real ping (average of 3 echoes) and shows it in a new
+Ping row in the sidebar and in the status line, and records it in
+the session history. A host that does not answer shows "no answer"
+— never a guess, never a stale number. The host setting only
+accepts a hostname or an IP address, so nothing odd can reach the
+ping command. Covered by new test rounds 24 (core: settings,
+parsing, measurement, history) and 24 GUI. All 24 rounds pass,
+pyflakes clean.
