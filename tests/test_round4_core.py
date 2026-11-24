@@ -298,4 +298,149 @@ res = core.scan(roots=[BASE], find_duplicates=False,
 if not any(r.path == own_file for r in res):
     fails.append("extra_protected sanity: file should be listed without protection")
 
+# --- 14) recycle_files: batching, per-file failures, cancel ---------------
+REC = f"{BASE}/recycle"
+os.makedirs(REC, exist_ok=True)
+
+
+def _rec_files(names):
+    out = []
+    for n in names:
+        p = os.path.join(REC, n)
+        with open(p, "w") as fh:
+            fh.write("r" * 10)
+        out.append(p)
+    return out
+
+
+def _fake_trash_ok(p):
+    os.remove(p)
+
+
+# 14a) per-file path (no Windows batch API on Linux): all moved, one call each
+files = _rec_files(["r1.txt", "r2.txt", "r3.txt"])
+calls = []
+moved, failed, processed = core.recycle_files(
+    files, trash_one=lambda p: (calls.append(p), _fake_trash_ok(p)))
+if (moved, failed, processed) != (3, [], 3):
+    fails.append(f"recycle: all-ok expected (3, [], 3), got {(moved, failed, processed)}")
+if len(calls) != 3 or any(os.path.exists(p) for p in files):
+    fails.append("recycle: per-file path should trash each file once")
+
+# 14b) a locked file is reported individually, the rest still move
+files = _rec_files(["s1.txt", "s2.txt", "s3.txt"])
+
+
+def _fake_trash_locked(p):
+    if p.endswith("s2.txt"):
+        raise PermissionError("file is in use")
+    os.remove(p)
+
+
+moved, failed, processed = core.recycle_files(files, trash_one=_fake_trash_locked)
+if moved != 2 or processed != 3:
+    fails.append(f"recycle: locked-file run expected moved=2 processed=3, got {moved}/{processed}")
+if len(failed) != 1 or not failed[0][0].endswith("s2.txt") or "in use" not in failed[0][1]:
+    fails.append(f"recycle: locked file should be the one failure with its reason, got {failed}")
+if os.path.exists(files[0]) or not os.path.exists(files[1]) or os.path.exists(files[2]):
+    fails.append("recycle: locked file must stay, the others must be gone")
+
+# 14c) batch success, verified per file: leftovers are retried one by one
+files = _rec_files(["b1.txt", "b2.txt", "b3.txt", "b4.txt"])
+real_batch = core._recycle_batch_windows
+
+
+def _fake_batch(paths):
+    for p in paths[:2]:  # shell moved the first two, left the rest
+        os.remove(p)
+    return True
+
+
+core._recycle_batch_windows = _fake_batch
+try:
+    retried = []
+    moved, failed, processed = core.recycle_files(
+        files, trash_one=lambda p: (retried.append(p), _fake_trash_ok(p)))
+finally:
+    core._recycle_batch_windows = real_batch
+if (moved, failed, processed) != (4, [], 4):
+    fails.append(f"recycle: batch+retry expected (4, [], 4), got {(moved, failed, processed)}")
+if sorted(retried) != sorted(files[2:]):
+    fails.append(f"recycle: leftovers should be retried per file, got {retried}")
+if any(os.path.exists(p) for p in files):
+    fails.append("recycle: batch leftovers should be gone after retry")
+
+# 14d) batch failure falls back to per-file for the whole batch
+files = _rec_files(["f1.txt", "f2.txt"])
+core._recycle_batch_windows = lambda paths: False
+try:
+    calls = []
+    moved, failed, processed = core.recycle_files(
+        files, trash_one=lambda p: (calls.append(p), _fake_trash_ok(p)))
+finally:
+    core._recycle_batch_windows = real_batch
+if (moved, failed, processed) != (2, [], 2) or len(calls) != 2:
+    fails.append(f"recycle: failed batch should fall back per file, got {(moved, failed, processed)} calls={len(calls)}")
+
+# 14e) batch success but a leftover is locked: reported, not silently moved
+files = _rec_files(["g1.txt", "g2.txt"])
+
+
+def _fake_batch_first_only(paths):
+    os.remove(paths[0])  # shell moved the first, left the second
+    return True
+
+
+def _fake_trash_locked_g2(p):
+    if p.endswith("g2.txt"):
+        raise PermissionError("file is in use")
+    os.remove(p)
+
+
+core._recycle_batch_windows = _fake_batch_first_only
+try:
+    moved, failed, processed = core.recycle_files(files, trash_one=_fake_trash_locked_g2)
+finally:
+    core._recycle_batch_windows = real_batch
+if moved != 1 or len(failed) != 1 or not failed[0][0].endswith("g2.txt"):
+    fails.append(f"recycle: locked leftover expected moved=1 failed=[g2], got {(moved, failed, processed)}")
+if not os.path.exists(files[1]):
+    fails.append("recycle: locked leftover must still exist")
+
+# 14f) cancel stops before the next file; unprocessed files are untouched
+files = _rec_files(["c1.txt", "c2.txt", "c3.txt", "c4.txt"])
+ev = threading.Event()
+
+
+def _fake_trash_cancel(p):
+    _fake_trash_ok(p)
+    if p.endswith("c2.txt"):
+        ev.set()
+
+
+moved, failed, processed = core.recycle_files(
+    files, trash_one=_fake_trash_cancel, cancel_event=ev)
+if (moved, processed) != (2, 2):
+    fails.append(f"recycle: cancel expected moved=2 processed=2, got {(moved, processed)}")
+if not os.path.exists(files[2]) or not os.path.exists(files[3]):
+    fails.append("recycle: cancelled files must stay untouched")
+
+# 14g) empty input is a no-op
+if core.recycle_files([], trash_one=_fake_trash_ok) != (0, [], 0):
+    fails.append("recycle: empty input should return (0, [], 0)")
+
+# 14h) batching actually chunks: batch_size=2 over 5 files
+files = _rec_files(["h1.txt", "h2.txt", "h3.txt", "h4.txt", "h5.txt"])
+seen_batches = []
+core._recycle_batch_windows = lambda paths: (seen_batches.append(list(paths)), False)[1]
+try:
+    moved, failed, processed = core.recycle_files(
+        files, trash_one=_fake_trash_ok, batch_size=2)
+finally:
+    core._recycle_batch_windows = real_batch
+if [len(b) for b in seen_batches] != [2, 2, 1]:
+    fails.append(f"recycle: batches should be [2, 2, 1], got {[len(b) for b in seen_batches]}")
+if (moved, failed, processed) != (5, [], 5):
+    fails.append(f"recycle: chunked run expected (5, [], 5), got {(moved, failed, processed)}")
+
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
