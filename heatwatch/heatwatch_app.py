@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -310,6 +310,8 @@ class HeatWatchApp(ctk.CTk):
             debounce_seconds=self.settings["gone_debounce_seconds"])
         self.warner = core.HeatWarner(self.settings["warn_cpu_c"])
         self.history = core.load_history()
+        self.idle = core.load_idle_baseline()
+        self._idle_blocked_until = 0.0
         self.latest = {"cpu": None, "gpu": None, "source": "none"}
         self.buffer = core.SampleBuffer(capacity=120)
         self._orb_phase = False
@@ -431,7 +433,13 @@ class HeatWatchApp(ctk.CTk):
             verdict_card, text="", font=ctk.CTkFont(size=11),
             text_color=MUTED, wraplength=250, justify="left",
             anchor="w")
-        self.verdict_detail.pack(anchor="w", padx=14, pady=(0, 10))
+        self.verdict_detail.pack(anchor="w", padx=14, pady=(0, 2))
+        self.idle_label = ctk.CTkLabel(
+            verdict_card,
+            text="Idle baseline: not enough idle data yet",
+            font=ctk.CTkFont(size=11), text_color=MUTED,
+            wraplength=250, justify="left", anchor="w")
+        self.idle_label.pack(anchor="w", padx=14, pady=(0, 10))
 
         self.lhm_button = ctk.CTkButton(
             sidebar, text="Open LibreHardwareMonitor",
@@ -777,6 +785,10 @@ class HeatWatchApp(ctk.CTk):
                     f"{fmt_duration(data['duration_s'])}, peak CPU "
                     f"{fmt_temp(data['peak_cpu'])}, peak GPU "
                     f"{fmt_temp(data['peak_gpu'])}")
+                # Post-game heat is not idle: keep the baseline
+                # clean for five minutes after a session ends.
+                self._idle_blocked_until = (
+                    payload["now"] + core.IDLE_COOLDOWN_SECONDS)
                 self._refresh_history()
         if payload["warned"]:
             cpu = temps["cpu"]
@@ -809,6 +821,13 @@ class HeatWatchApp(ctk.CTk):
             else:
                 self.state_label.configure(text="IDLE — WATCHING",
                                            text_color=MUTED)
+            # No game running: this tick is idle data, at most one
+            # sample a minute (the core throttles the rest).
+            if self.idle.record(payload["now"], temps["cpu"],
+                                temps["gpu"],
+                                self._idle_blocked_until):
+                core.save_idle_baseline(self.idle)
+                self._refresh_idle_label()
         else:
             hot = (temps["cpu"] is not None
                    and temps["cpu"] >= warn_cpu)
@@ -960,6 +979,13 @@ class HeatWatchApp(ctk.CTk):
                      f"{result['sessions_used']} full sessions: "
                      f"{fmt_temp(result['median_peak_cpu'])}.")
         self.verdict_detail.configure(text=detail + extra)
+        self._refresh_idle_label()
+
+    def _refresh_idle_label(self):
+        if not hasattr(self, "idle_label"):
+            return
+        self.idle_label.configure(
+            text=core.format_idle_baseline(self.idle.baseline()))
 
     def _show_session_graph(self, record):
         """Detail window: the session's CPU/GPU curves over time,
