@@ -89,6 +89,114 @@ def human_size(num_bytes):
 
 
 # --------------------------------------------------------------------------
+# Recycle Bin moves, batched
+# --------------------------------------------------------------------------
+
+def _recycle_batch_windows(paths):
+    """One SHFileOperationW call (FO_DELETE + FOF_ALLOWUNDO) for many files.
+
+    Returns True only if the shell call itself reported success (no error
+    code, not aborted). The caller must still verify per file what
+    actually vanished, because a locked file can survive an otherwise
+    successful batch. Returns False on non-Windows platforms, for an
+    empty list, or when the call fails - the caller then falls back to
+    one trash call per file, which keeps per-file failure reporting.
+    """
+    if os.name != "nt" or not paths:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        buf = "\0".join(paths) + "\0\0"
+        file_op = ctypes.create_unicode_buffer(buf)
+
+        class SHFILEOPSTRUCT(ctypes.Structure):
+            _fields_ = [
+                ("hwnd", wintypes.HWND),
+                ("wFunc", wintypes.UINT),
+                ("pFrom", wintypes.LPCWSTR),
+                ("pTo", wintypes.LPCWSTR),
+                ("fFlags", wintypes.UINT),
+                ("fAnyOperationsAborted", wintypes.BOOL),
+                ("hNameMappings", wintypes.LPVOID),
+                ("lpszProgressTitle", wintypes.LPCWSTR),
+            ]
+
+        op = SHFILEOPSTRUCT()
+        op.hwnd = None
+        op.wFunc = 0x3  # FO_DELETE
+        op.pFrom = ctypes.cast(file_op, wintypes.LPCWSTR)
+        op.pTo = None
+        # FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT:
+        # to the Recycle Bin, no prompts, no error popups, no progress UI.
+        op.fFlags = 0x40 | 0x10 | 0x400 | 0x4
+        op.fAnyOperationsAborted = False
+        result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+        return result == 0 and not op.fAnyOperationsAborted
+    except Exception:
+        return False
+
+
+def _trash_one(path, trash_one):
+    """One per-file trash call. Returns None on success, else the error."""
+    try:
+        trash_one(path)
+        return None
+    except Exception as exc:  # locked / permission / already gone
+        return str(exc)
+
+
+def recycle_files(paths, trash_one, batch_size=200, cancel_event=None,
+                  progress_cb=None):
+    """Move paths to the Recycle Bin, fast.
+
+    On Windows the paths are sent in batches of ``batch_size`` through a
+    single SHFileOperationW call each, instead of one shell call per
+    file (the first real clean of ~37k files took ~25 minutes that way).
+    A batch that reports success is verified file by file: anything
+    still there is retried with the per-file ``trash_one`` call, so a
+    locked file is still reported individually. A batch that fails falls
+    back to per-file calls for the whole batch. On other platforms the
+    batch API does not exist, so every file goes through ``trash_one``.
+
+    ``trash_one`` is the single-file mover (send2trash in the app).
+    ``progress_cb(done, total)`` is called after each resolved file.
+    Returns (moved, failed, processed): moved is a count, failed is a
+    list of (path, reason) for files that were attempted but not moved,
+    processed is how many files were attempted at all - the rest were
+    never tried because the run was cancelled.
+    """
+    paths = list(paths)
+    total = len(paths)
+    moved = 0
+    failed = []
+    processed = 0
+    i = 0
+    while i < total:
+        if cancel_event is not None and cancel_event.is_set():
+            break
+        batch = paths[i:i + batch_size]
+        batched = _recycle_batch_windows(batch)
+        for p in batch:
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            if batched and not os.path.exists(p):
+                moved += 1
+            else:
+                err = _trash_one(p, trash_one)
+                if err is None:
+                    moved += 1
+                else:
+                    failed.append((p, err))
+            processed += 1
+            if progress_cb is not None:
+                progress_cb(processed, total)
+        i += batch_size
+    return moved, failed, processed
+
+
+# --------------------------------------------------------------------------
 # Generic file walking
 # --------------------------------------------------------------------------
 
