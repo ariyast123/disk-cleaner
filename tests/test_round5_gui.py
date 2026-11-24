@@ -374,8 +374,8 @@ PROJ = os.path.join(HERE, "..")
 LAUNCHED = os.path.join("C:\\Users\\Ariya", "Desktop", "DiskCleaner.exe")
 lines = gui.update_helper_lines(PROJ, LAUNCHED)
 joined = "\n".join(lines)
-if "call build.bat auto > update_build.log 2>&1" not in joined:
-    fails.append("helper: build must run as 'call build.bat auto > update_build.log 2>&1'")
+if "call build.bat auto >> update_build.log 2>&1" not in joined:
+    fails.append("helper: build must run as 'call build.bat auto >> update_build.log 2>&1'")
 if any(l.strip() == "call build.bat" for l in lines):
     fails.append("helper: bare 'call build.bat' (no auto) would pause forever")
 if 'if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL' not in joined:
@@ -419,7 +419,7 @@ if not os.path.exists(helper_path):
 else:
     with open(helper_path, encoding="utf-8") as fh:
         written = fh.read()
-    if "call build.bat auto > update_build.log 2>&1" not in written:
+    if "call build.bat auto >> update_build.log 2>&1" not in written:
         fails.append("_write_update_helper: written helper lacks the auto build call")
     if f'set "LAUNCHED={sys.executable}"' not in written:
         fails.append("_write_update_helper: launched exe should be sys.executable")
