@@ -44,10 +44,19 @@ confirmation, no admin requirement, UI text in English.
    Implemented exactly as designed, with a new test round 7
    (save/load, bad-file rejection, startup show-once, stale-version
    cleanup, update-hook save); full suite green.
-4. **Faster cleaning** — the first real clean (36,776 files) took
-   ~25 minutes because each file is a separate Recycle Bin shell call.
-   Batch the recycle operations (one shell operation for many files)
-   while keeping per-file failure reporting and the log.
+4. **Faster cleaning — DONE (Nov 23, 2026, v1.2.5).** The first real
+   clean (36,776 files) took ~25 minutes because each file was a
+   separate Recycle Bin shell call. Cleaning now batches: on Windows
+   `cleaner_core.recycle_files()` sends up to 200 files per
+   SHFileOperationW call (FO_DELETE + FOF_ALLOWUNDO), verifies each
+   file afterwards, retries leftovers one by one with send2trash,
+   and falls back to per-file calls whenever a batch fails — so
+   per-file failure reporting and the log are unchanged, and a
+   cancelled clean still leaves unprocessed files listed + ticked.
+   Covered by new tests in round 4 (section 14). Full suite green.
+   (Also fixed round 5's stale helper assertion: the build line
+   appends with `>>` because the helper already truncates the log
+   with its header line; the test now expects the append form.)
 5. **Scan progress with a percentage** — quick counting pass or
    running estimate so the bar shows % instead of an indeterminate
    stripe; keep the live files-checked counter.
