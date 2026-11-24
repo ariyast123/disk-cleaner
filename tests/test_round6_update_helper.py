@@ -23,6 +23,7 @@ def test_helper_kills_first():
     # copy-back over the launched exe + relaunch, with fallback
     assert 'copy /Y "%BUILT%" "%LAUNCHED%"' in body
     assert 'start "" "%LAUNCHED%"' in body
+    assert "relaunch issued" in body
     print("PASS helper: kill-first, verify, build, copy-back, relaunch")
 
 
@@ -43,13 +44,14 @@ def test_helper_launch_has_a_console():
                             "disk_cleaner_app.py"),
                encoding="utf-8").read()
     assert "CREATE_NEW_CONSOLE" in src
+    assert "explorer.exe" in src
     assert '"DETACHED_PROCESS"' not in src
     print("PASS helper launches with its own console window")
 
 
 def test_version():
-    assert gui.VERSION == "1.2.4"
-    print("PASS app version is 1.2.4")
+    assert gui.VERSION == "1.2.6"
+    print("PASS app version is 1.2.6")
 
 
 def main():
