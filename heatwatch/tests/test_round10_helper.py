@@ -27,6 +27,7 @@ def test_helper_lines():
     assert "call build.bat auto >> update_build.log 2>&1" in body
     assert "copy /Y" in body and "%BUILT%" in body and "%LAUNCHED%" in body
     assert 'start "" "%LAUNCHED%"' in body
+    assert "relaunch issued" in body
     # narrated on the console too — no more silent black window
     assert "echo HeatWatch update: closing any running copies..." in body
     assert "echo HeatWatch update: building" in body
@@ -38,13 +39,14 @@ def test_helper_launch_has_a_console():
                             "heatwatch_app.py"),
                encoding="utf-8").read()
     assert "CREATE_NEW_CONSOLE" in src
+    assert "explorer.exe" in src
     assert '"DETACHED_PROCESS"' not in src
     print("PASS helper launches with its own console window")
 
 
 def test_version_is_1_1_0():
-    assert gui.VERSION == "1.3.1"
-    print("PASS app version is 1.3.1")
+    assert gui.VERSION == "1.3.2"
+    print("PASS app version is 1.3.2")
 
 
 def test_startup_command():
