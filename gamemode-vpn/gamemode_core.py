@@ -966,3 +966,55 @@ class Engine:
                 ("Protection restores by itself once the tunnel is up", "next"),
             ]
         return []
+
+
+# ---------------------------------------------------------------------------
+# Exe icon (build-time only)
+# ---------------------------------------------------------------------------
+
+ICON_SIZES = ((16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256))
+
+
+def write_app_icon(path):
+    """Draw the branded exe icon and save it as a multi-size .ico.
+
+    Violet rounded square (the app's dark gaming look) with a cyan
+    lightning bolt — Game Mode on. Pillow is imported lazily: this is
+    build tooling, called by build.bat when gamemode_icon.ico is
+    missing, and the updater ships the generated file. The drawing
+    is deterministic, so regenerating it gives byte-identical output.
+    Returns the path written.
+    """
+    from PIL import Image, ImageDraw
+
+    size = 256
+    top = (124, 58, 237)      # violet #7C3AED
+    bottom = (76, 29, 149)    # deep violet #4C1D95
+    bolt_fill = (34, 211, 238, 255)  # cyan #22D3EE
+
+    # Vertical violet gradient.
+    column = Image.new("RGB", (1, size))
+    for y in range(size):
+        t = y / (size - 1)
+        column.putpixel((0, y), tuple(
+            int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)))
+    gradient = column.resize((size, size))
+
+    # Rounded-square mask, then the gradient through it.
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [0, 0, size - 1, size - 1], radius=56, fill=255)
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    image.paste(gradient, (0, 0), mask)
+
+    draw = ImageDraw.Draw(image)
+    # Subtle lighter inner edge so the square reads on dark taskbars.
+    draw.rounded_rectangle([5, 5, size - 6, size - 6], radius=52,
+                           outline=(167, 139, 250, 110), width=3)
+    # Cyan lightning bolt, centred.
+    bolt = [(148, 26), (92, 142), (126, 142),
+            (104, 230), (166, 112), (132, 112)]
+    draw.polygon(bolt, fill=bolt_fill)
+
+    image.save(path, format="ICO", sizes=list(ICON_SIZES))
+    return path
