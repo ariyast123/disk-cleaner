@@ -69,3 +69,14 @@ the weekly digest job reads the last 7 days and posts them in chat
   the per-file cleanup log is unchanged.
 - A cancelled clean still leaves the unprocessed files listed
   and ticked, so it can be resumed.
+
+## 2026-11-24 — v1.2.6
+
+- The automatic update hand-off was rebuilt: the app now hands
+  finish_update.bat to Explorer instead of starting it itself.
+  A helper launched by the app died together with the app it had
+  just closed (console opened, closed, nothing rebuilt), while a
+  manual double-click always worked. Explorer-launched, the
+  helper is fully independent of the app.
+- The helper now logs a 'relaunch issued' line at the end, so any
+  future failure leaves clear evidence in update_build.log.
