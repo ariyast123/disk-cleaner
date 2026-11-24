@@ -23,8 +23,13 @@ worst bug this app can ship.
    test rounds 21 (engine records + storage) and 22 (GUI).
 3. **Minimize to tray — DONE in v1.2.0** (pystray; close hides to
    the tray, double-click reopens, Quit in the tray menu).
-4. **Exe icon + branding.** A proper .ico for GameModeVPN.exe in
-   build.bat, matching the violet/cyan look.
+4. **Exe icon + branding — DONE in v1.3.6.** `gamemode_icon.ico`
+   (violet rounded square + cyan bolt, 16–256px) now ships in the
+   repo and is downloaded by the updater; the app uses it for the
+   window and tray icons and build.bat embeds it with
+   `--icon`. `gamemode_core.write_app_icon()` draws it
+   deterministically with Pillow, and build.bat regenerates it if
+   it is ever missing. Covered by test round 10.
 5. **Ping proof.** After Game Mode turns on, optionally measure and
    show the real ping to a configurable host, so the improvement is
    visible, not just claimed. Off by default (privacy: it contacts
