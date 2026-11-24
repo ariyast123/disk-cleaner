@@ -278,3 +278,14 @@ accepts a hostname or an IP address, so nothing odd can reach the
 ping command. Covered by new test rounds 24 (core: settings,
 parsing, measurement, history) and 24 GUI. All 24 rounds pass,
 pyflakes clean.
+
+## 2026-11-24 — v1.4.1
+
+- The automatic update hand-off was rebuilt: the app now hands
+  finish_update.bat to Explorer instead of starting it itself.
+  A helper launched by the app died together with the app it had
+  just closed (console opened, closed, nothing rebuilt), while a
+  manual double-click always worked. Explorer-launched, the
+  helper is fully independent of the app.
+- The helper now logs a 'relaunch issued' line at the end, so any
+  future failure leaves clear evidence in update_build.log.
