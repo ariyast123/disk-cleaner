@@ -98,3 +98,18 @@ on the Watched Games list takes a name and its process names
 ones. Custom games get a × on their row to remove them; the
 five built-in games cannot be removed. New test round 18
 covers adding, duplicates, and removing; all 18 rounds pass.
+
+## 2026-11-23 — v1.3.1
+
+HeatWatch now tracks idle temperatures: one sample a minute
+while no watched game is running, kept for a week, with the
+24-hour median shown as an idle baseline in the repaste
+verdict card, next to the gaming peaks — a rising idle
+baseline is an early dust/paste signal. The five minutes
+after a session ends are skipped so post-game heat never
+pollutes the baseline, and a tick with no temperature source
+is dropped, never guessed. New test round 19 covers the
+recording throttle, the median window, the cooldown and the
+verdict-card label; all 19 rounds pass. (This run also fixed
+the round-10 version assertion, which v1.3.0 had left
+stale at 1.2.5.)
