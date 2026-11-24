@@ -28,6 +28,7 @@ def test_helper_waits_builds_and_copies_back():
     assert 'if /I not "%BUILT%"=="%LAUNCHED%" copy /Y "%BUILT%" "%LAUNCHED%" >NUL' in body
     # and it relaunches the launched path, not just the dist build
     assert 'start "" "%LAUNCHED%"' in body
+    assert "relaunch issued" in body
     # if the build failed (no fresh exe), the old copy still relaunches
     assert ') else (' in body
     assert 'if exist "%LAUNCHED%" start "" "%LAUNCHED%"' in body
@@ -48,13 +49,14 @@ def test_helper_launch_has_a_console():
                             "gamemode_vpn_app.py"),
                encoding="utf-8").read()
     assert "CREATE_NEW_CONSOLE" in src
+    assert "explorer.exe" in src
     assert '"DETACHED_PROCESS"' not in src
     print("PASS helper launches with its own console window")
 
 
 def test_version_is_140():
-    assert gui.VERSION == "1.4.0"
-    print("PASS app version is 1.4.0")
+    assert gui.VERSION == "1.4.1"
+    print("PASS app version is 1.4.1")
 
 
 if __name__ == "__main__":
