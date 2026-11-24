@@ -1,5 +1,1 @@
-{
-  "version": "1.2.3",
-  "notes": "Test update - no changes",
-  "patch_notes": "Test update, published at Ariya's request to exercise the fixed automatic update flow end to end. No changes to the app itself."
-}
+{"notes":"Shows what's new after updating.","patch_notes":"After an update, the app now shows a small What's New window on the next launch with the new version's patch notes.\nThe window appears exactly once and has a Close button.\nA note saved for a different version is cleaned up without showing anything.","version":"1.2.4"}
