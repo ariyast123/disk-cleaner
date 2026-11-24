@@ -50,6 +50,10 @@ def history_path():
     return os.path.join(data_dir(), "sessions.json")
 
 
+def idle_path():
+    return os.path.join(data_dir(), "idle.json")
+
+
 def log_path():
     return os.path.join(data_dir(), "heatwatch.log")
 
@@ -763,6 +767,140 @@ def verdict(history, min_duration_s=600, window=5):
         level = "healthy"
     return {"level": level, "median_peak_cpu": median_peak,
             "sessions_used": len(recent)}
+
+
+# ---------------------------------------------------------------------------
+# Idle baseline
+# ---------------------------------------------------------------------------
+
+IDLE_SAMPLE_SECONDS = 60.0
+IDLE_KEEP_SECONDS = 7 * 24 * 3600
+IDLE_MAX_SAMPLES = 10080
+IDLE_WINDOW_SECONDS = 24 * 3600
+IDLE_COOLDOWN_SECONDS = 300.0
+
+
+def _as_temp(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+class IdleBaseline:
+    """Idle temperatures outside game sessions.
+
+    One sample per minute while no watched game runs, kept for
+    a week. The baseline is the median CPU/GPU over the last
+    24 hours of idle samples — a rising idle baseline is an
+    early dust/paste signal, shown next to the gaming peaks.
+
+    Only real readings are stored: a tick with no temperature
+    at all is dropped, and a half-missing sample keeps its
+    None half (a gap, never a guess). The first five minutes
+    after a session ends are skipped, so post-game heat does
+    not pollute the baseline.
+    """
+
+    def __init__(self, samples=None):
+        self.samples = []
+        if isinstance(samples, (list, tuple)):
+            for point in samples:
+                cleaned = self._clean_point(point)
+                if cleaned is not None:
+                    self.samples.append(cleaned)
+        self.samples.sort(key=lambda point: point[0])
+        self._last_ts = (self.samples[-1][0] if self.samples
+                         else None)
+
+    @staticmethod
+    def _clean_point(point):
+        if not isinstance(point, (list, tuple)) or len(point) != 3:
+            return None
+        ts = _as_temp(point[0])
+        if ts is None or ts < 0:
+            return None
+        cpu, gpu = _as_temp(point[1]), _as_temp(point[2])
+        if cpu is None and gpu is None:
+            return None
+        return [ts, cpu, gpu]
+
+    def record(self, ts, cpu, gpu, blocked_until=0.0):
+        """Store one idle sample. Returns True when stored."""
+        if ts < blocked_until:
+            return False
+        cpu, gpu = _as_temp(cpu), _as_temp(gpu)
+        if cpu is None and gpu is None:
+            return False
+        if (self._last_ts is not None
+                and ts - self._last_ts < IDLE_SAMPLE_SECONDS):
+            return False
+        self.samples.append([float(ts), cpu, gpu])
+        self._last_ts = float(ts)
+        self._prune(ts)
+        return True
+
+    def _prune(self, now):
+        cutoff = now - IDLE_KEEP_SECONDS
+        self.samples = [p for p in self.samples if p[0] >= cutoff]
+        overflow = len(self.samples) - IDLE_MAX_SAMPLES
+        if overflow > 0:
+            del self.samples[:overflow]
+
+    def baseline(self, now=None, window_seconds=IDLE_WINDOW_SECONDS):
+        """Median idle CPU/GPU over the recent window.
+
+        -> {"cpu": float|None, "gpu": float|None, "samples": int}
+        where "samples" counts the idle ticks in the window.
+        """
+        if now is None:
+            now = time.time()
+        cutoff = now - window_seconds
+        window = [p for p in self.samples if p[0] >= cutoff]
+        cpus = [p[1] for p in window if p[1] is not None]
+        gpus = [p[2] for p in window if p[2] is not None]
+        return {"cpu": _median(cpus), "gpu": _median(gpus),
+                "samples": len(window)}
+
+    def to_dict(self):
+        return {"samples": [list(p) for p in self.samples]}
+
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, dict):
+            return cls()
+        return cls(data.get("samples"))
+
+
+def load_idle_baseline():
+    try:
+        with open(idle_path(), "r", encoding="utf-8") as fh:
+            return IdleBaseline.from_dict(json.load(fh))
+    except (OSError, ValueError):
+        return IdleBaseline()
+
+
+def save_idle_baseline(baseline):
+    tmp = idle_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(baseline.to_dict(), fh, indent=2)
+    os.replace(tmp, idle_path())
+
+
+def format_idle_baseline(baseline):
+    """One line for the verdict card."""
+    if not isinstance(baseline, dict):
+        baseline = {}
+    if not baseline.get("samples"):
+        return "Idle baseline: not enough idle data yet"
+    cpu = baseline.get("cpu")
+    gpu = baseline.get("gpu")
+    cpu_text = "—" if cpu is None else f"{cpu:.0f}°C"
+    gpu_text = "—" if gpu is None else f"{gpu:.0f}°C"
+    return (f"Idle baseline (last 24 h): CPU {cpu_text} · GPU "
+            f"{gpu_text} ({baseline['samples']} samples)")
 
 
 # ---------------------------------------------------------------------------
