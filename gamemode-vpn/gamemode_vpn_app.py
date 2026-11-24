@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 # Self-update channel: the gamemode-vpn/ folder of the same GitHub repo
 # that carries Disk Cleaner. On startup the app fetches version.json;
@@ -209,6 +209,7 @@ def update_helper_lines(project, launched_exe):
         ") else (",
         '  if exist "%LAUNCHED%" start "" "%LAUNCHED%"',
         ")",
+        "echo [helper] relaunch issued >> update_build.log",
         "",
     ]
 
@@ -805,20 +806,28 @@ class GameModeApp(ctk.CTk):
         lines = update_helper_lines(project, sys.executable)
         with open(helper, "w", encoding="ascii") as fh:
             fh.write("\r\n".join(lines))
-        subprocess.Popen(
-            ["cmd", "/c", helper],
-            # The helper gets its OWN console window, exactly like
-            # a manual double-click of finish_update.bat. It used
-            # to be DETACHED_PROCESS (no console): on Ariya's PC
-            # the detached batch died silently right after its
-            # first log line (Nov 22, 2026) - a windowed app's
-            # invalid std handles kill cmd when it echoes. Manual
-            # runs always worked; now automatic ones match them.
-            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-            stdin=subprocess.DEVNULL,
-            close_fds=True,
-        )
+        # Hand the helper to Explorer instead of launching it
+        # from this process. The batch's first job is to kill
+        # THIS app, and on Ariya's PC a helper launched by the
+        # app died along with it (Nov 22-23, 2026: the console
+        # opened, closed, and nothing was rebuilt or
+        # relaunched), while the very same file double-clicked
+        # in Explorer always worked - a documented pattern: a
+        # script that kills its launcher gets killed with it.
+        # Explorer is a long-lived shell process, so a batch it
+        # opens is completely independent of this app, exactly
+        # like a manual double-click. The direct launch below is
+        # only a fallback if Explorer cannot be started.
+        try:
+            subprocess.Popen(["explorer.exe", helper])
+        except OSError:
+            subprocess.Popen(
+                ["cmd", "/c", helper],
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+            )
 
     def _maybe_show_whats_new(self):
         if self._hidden_in_tray:
