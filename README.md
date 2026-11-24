@@ -34,7 +34,8 @@ app; right-click a file for "Show in Explorer" (opens Explorer with
 that exact file highlighted) or "Open containing folder". Folders you
 add under "Also scanning" each get a ✕ button to remove them, and
 "Clear scan" throws away the current results so you can rescan with
-different settings. The System space tab shows each hog as a card
+different settings. After an update, the next launch shows a small
+"What's new" window with the new version's patch notes, once. The System space tab shows each hog as a card
 with its size and its safe fix.
 
 ## What it finds
