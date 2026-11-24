@@ -96,7 +96,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.5"
+VERSION = "1.2.6"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -293,6 +293,7 @@ def update_helper_lines(project, launched_exe):
         ") else (",
         '  if exist "%LAUNCHED%" start "" "%LAUNCHED%"',
         ")",
+        "echo [helper] relaunch issued >> update_build.log",
         "",
     ]
 
@@ -451,27 +452,35 @@ class DiskCleanerApp(ctk.CTk):
             )
 
     def _write_update_helper(self):
-        """Write finish_update.bat and start it detached: it waits for
+        """Write finish_update.bat and hand it to Explorer: it closes
         this app to exit, rebuilds the exe and relaunches it."""
         project = project_folder()
         helper = os.path.join(project, "finish_update.bat")
         lines = update_helper_lines(project, sys.executable)
         with open(helper, "w", encoding="ascii") as fh:
             fh.write("\r\n".join(lines))
-        subprocess.Popen(
-            ["cmd", "/c", helper],
-            # The helper gets its OWN console window, exactly like
-            # a manual double-click of finish_update.bat. It used
-            # to be DETACHED_PROCESS (no console): on Ariya's PC
-            # the detached batch died silently right after its
-            # first log line (Nov 22, 2026) - a windowed app's
-            # invalid std handles kill cmd when it echoes. Manual
-            # runs always worked; now automatic ones match them.
-            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-            stdin=subprocess.DEVNULL,
-            close_fds=True,
-        )
+        # Hand the helper to Explorer instead of launching it
+        # from this process. The batch's first job is to kill
+        # THIS app, and on Ariya's PC a helper launched by the
+        # app died along with it (Nov 22-23, 2026: the console
+        # opened, closed, and nothing was rebuilt or
+        # relaunched), while the very same file double-clicked
+        # in Explorer always worked - a documented pattern: a
+        # script that kills its launcher gets killed with it.
+        # Explorer is a long-lived shell process, so a batch it
+        # opens is completely independent of this app, exactly
+        # like a manual double-click. The direct launch below is
+        # only a fallback if Explorer cannot be started.
+        try:
+            subprocess.Popen(["explorer.exe", helper])
+        except OSError:
+            subprocess.Popen(
+                ["cmd", "/c", helper],
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+            )
 
     # ------------------------------------------------------------------
     # Sidebar: fixed header, scrollable settings, fixed action block.
