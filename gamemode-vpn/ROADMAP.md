@@ -30,10 +30,14 @@ worst bug this app can ship.
    `--icon`. `gamemode_core.write_app_icon()` draws it
    deterministically with Pillow, and build.bat regenerates it if
    it is ever missing. Covered by test round 10.
-5. **Ping proof.** After Game Mode turns on, optionally measure and
-   show the real ping to a configurable host, so the improvement is
-   visible, not just claimed. Off by default (privacy: it contacts
-   the chosen host).
+5. **Ping proof — DONE in v1.4.0.** After Game Mode turns on, the
+   app measures the real ping to a configurable host (default
+   8.8.8.8) and shows it in a new Ping row in the sidebar, in the
+   status line, and in the session history. Off by default (privacy:
+   it contacts the chosen host); the host setting only accepts a
+   hostname or an IP address, and a host that does not answer shows
+   "no answer", never a guess. Covered by test rounds 24 (core) and
+   24 GUI.
 6. **UIA auto-click — DONE in v1.2.0 as Auto mode.** At Ariya's
    direct request (Nov 22, 2026) it shipped default ON with the
    strict conditions kept: exact-name button matching (Connect can
