@@ -113,3 +113,14 @@ recording throttle, the median window, the cooldown and the
 verdict-card label; all 19 rounds pass. (This run also fixed
 the round-10 version assertion, which v1.3.0 had left
 stale at 1.2.5.)
+
+## 2026-11-24 — v1.3.2
+
+- The automatic update hand-off was rebuilt: the app now hands
+  finish_update.bat to Explorer instead of starting it itself.
+  A helper launched by the app died together with the app it had
+  just closed (console opened, closed, nothing rebuilt), while a
+  manual double-click always worked. Explorer-launched, the
+  helper is fully independent of the app.
+- The helper now logs a 'relaunch issued' line at the end, so any
+  future failure leaves clear evidence in update_build.log.
