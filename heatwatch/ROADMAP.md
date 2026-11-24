@@ -11,8 +11,11 @@
    points so long sessions stay bounded) and each history row
    has a Graph button opening a small CPU/GPU line chart with
    the warning lines drawn in.
-3. **Custom games in the UI** — add/remove games like GameMode
-   has (v1.0.0 ships toggles only).
+3. **Custom games in the UI** — DONE (v1.3.0, Nov 23,
+   2026). An Add game button takes a name and comma-separated
+   process names and watches the game like the built-in ones;
+   custom games get a × on their row to remove them, and the
+   five built-in games cannot be removed.
 4. **LHM autostart helper** — a guided one-time setup that
    registers LibreHardwareMonitor to start elevated at boot
    (Task Scheduler), so HeatWatch always has its source.
