@@ -173,6 +173,61 @@ def match_games(running_names, games):
     return matched
 
 
+def add_custom_game(settings, name, patterns):
+    """Add a user-defined game to settings["games"].
+
+    `patterns` may be a comma-separated string or a list of
+    process names. Returns (game, None) on success, or
+    (None, error) when the name is empty, no process name
+    survives cleaning, or a game with that name is already
+    listed (case-insensitive). Built-in games are protected
+    by the same duplicate check.
+    """
+    if not isinstance(settings, dict):
+        return None, "Add game needs a name and at least one process name"
+    name = str(name or "").strip()
+    if not name:
+        return None, "Add game needs a name and at least one process name"
+    if isinstance(patterns, str):
+        patterns = patterns.split(",")
+    if not isinstance(patterns, (list, tuple)):
+        return None, "Add game needs a name and at least one process name"
+    cleaned = [str(p).strip().lower() for p in patterns
+               if str(p).strip()]
+    if not cleaned:
+        return None, "Add game needs a name and at least one process name"
+    games = settings.setdefault("games", [])
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+        if str(game.get("name", "")).strip().lower() == name.lower():
+            return None, f"{name} is already on the watch list"
+    game = {"name": name, "patterns": cleaned, "enabled": True,
+            "builtin": False}
+    games.append(game)
+    return game, None
+
+
+def remove_custom_game(settings, name):
+    """Remove a custom (non-builtin) game by name. Returns True
+    when one was removed; built-in games and unknown names
+    return False and change nothing."""
+    if not isinstance(settings, dict):
+        return False
+    target = str(name or "").strip().lower()
+    if not target:
+        return False
+    games = settings.get("games") or []
+    kept = [game for game in games
+            if not (isinstance(game, dict)
+                    and str(game.get("name", "")).strip().lower() == target
+                    and not game.get("builtin"))]
+    if len(kept) == len(games):
+        return False
+    settings["games"] = kept
+    return True
+
+
 def running_process_names():
     names = set()
     try:
