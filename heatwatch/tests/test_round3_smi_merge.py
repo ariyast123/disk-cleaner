@@ -23,14 +23,15 @@ def test_web_wins():
     sample = core.collect_temps(readers=readers(
         web={"cpu": 91.0, "gpu": 70.0},
         wmi={"cpu": 50.0, "gpu": 40.0}, smi=30.0))
-    assert sample == {"cpu": 91.0, "gpu": 70.0, "source": "LHM web"}, sample
+    assert sample == {"cpu": 91.0, "gpu": 70.0, "fan": None,
+                      "source": "LHM web"}, sample
     print("PASS web feed beats WMI and smi when complete")
 
 
 def test_wmi_fills_cpu_smi_fills_gpu():
     sample = core.collect_temps(readers=readers(
         web=None, wmi={"cpu": 88.0, "gpu": None}, smi=69.0))
-    assert sample == {"cpu": 88.0, "gpu": 69.0,
+    assert sample == {"cpu": 88.0, "gpu": 69.0, "fan": None,
                       "source": "LHM WMI + nvidia-smi"}, sample
     print("PASS WMI fills the CPU, smi fills the GPU")
 
@@ -46,7 +47,8 @@ def test_partial_web_plus_wmi():
 
 def test_nothing_anywhere():
     sample = core.collect_temps(readers=readers())
-    assert sample == {"cpu": None, "gpu": None, "source": "none"}, sample
+    assert sample == {"cpu": None, "gpu": None, "fan": None,
+                      "source": "none"}, sample
     print("PASS no sources -> a clean 'none' sample")
 
 
