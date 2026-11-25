@@ -938,6 +938,124 @@ def is_windows():
 
 
 # ---------------------------------------------------------------------------
+# LibreHardwareMonitor autostart (Task Scheduler)
+# ---------------------------------------------------------------------------
+
+LHM_TASK_NAME = "LibreHardwareMonitor"
+
+
+def build_lhm_task_args(exe_path):
+    """schtasks argv registering LHM to start elevated at logon.
+
+    /SC ONLOGON runs it at every sign-in; /RL HIGHEST runs it
+    elevated so its driver can read the CPU; /F replaces a
+    task HeatWatch registered before. No extra flags on the
+    exe itself: LHM remembers its own minimize-to-tray
+    setting. Returns None for a blank path.
+    """
+    path = str(exe_path or "").strip()
+    if not path:
+        return None
+    return ["schtasks", "/Create", "/TN", LHM_TASK_NAME,
+            "/TR", f'"{path}"', "/SC", "ONLOGON", "/RL", "HIGHEST",
+            "/F"]
+
+
+def _ps_quote(arg):
+    """One PowerShell single-quoted literal ('' escapes ')."""
+    return "'" + str(arg).replace("'", "''") + "'"
+
+
+def build_elevated_command(argv):
+    """Wrap argv in a PowerShell that re-launches it elevated.
+
+    Creating a highest-privileges task needs admin rights and
+    HeatWatch normally runs unelevated, so the call goes
+    through Start-Process -Verb RunAs (one UAC prompt).
+    -PassThru + -Wait carries the exit code back out, and a
+    declined prompt lands in the catch instead of hanging.
+    Returns None for an empty argv.
+    """
+    if not argv:
+        return None
+    quoted = ",".join(_ps_quote(arg) for arg in argv)
+    script = (
+        "try { $p = Start-Process -FilePath "
+        + _ps_quote(argv[0])
+        + " -ArgumentList " + quoted
+        + " -Verb RunAs -Wait -PassThru; exit $p.ExitCode }"
+        " catch { exit 1 }")
+    return ["powershell", "-NoProfile", "-NonInteractive",
+            "-Command", script]
+
+
+def _run_command(argv, timeout=30.0):
+    return subprocess.run(
+        argv, capture_output=True, text=True, timeout=timeout,
+        creationflags=CREATE_NO_WINDOW)
+
+
+def lhm_task_exists(runner=None):
+    """True when the autostart task is registered.
+
+    A query needs no elevation. False on any error, and False
+    off Windows (where the runner is never called).
+    """
+    if not is_windows():
+        return False
+    run = runner or _run_command
+    try:
+        result = run(["schtasks", "/Query", "/TN", LHM_TASK_NAME])
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def create_lhm_task(exe_path, runner=None):
+    """Register the autostart task (elevated). -> (ok, message)."""
+    if not is_windows():
+        return False, "LHM autostart is available on Windows only"
+    args = build_lhm_task_args(exe_path)
+    if args is None:
+        return False, ("LibreHardwareMonitor was not found — "
+                       "install it first")
+    run = runner or _run_command
+    try:
+        result = run(build_elevated_command(args))
+    except Exception as exc:
+        log_line(f"LHM autostart setup failed: {exc}")
+        return False, "Could not set up LHM autostart"
+    if result.returncode == 0:
+        return True, ("LibreHardwareMonitor will now start at "
+                      "every sign-in")
+    detail = str(getattr(result, "stderr", "") or "").strip()
+    log_line("LHM autostart setup failed: "
+             f"rc={result.returncode} {detail}".strip())
+    return False, ("Could not set up LHM autostart — approve the "
+                   "admin prompt and try again")
+
+
+def remove_lhm_task(runner=None):
+    """Delete the autostart task (elevated). -> (ok, message)."""
+    if not is_windows():
+        return False, "LHM autostart is available on Windows only"
+    run = runner or _run_command
+    args = ["schtasks", "/Delete", "/TN", LHM_TASK_NAME, "/F"]
+    try:
+        result = run(build_elevated_command(args))
+    except Exception as exc:
+        log_line(f"LHM autostart removal failed: {exc}")
+        return False, "Could not remove LHM autostart"
+    if result.returncode == 0:
+        return True, "LHM autostart removed"
+    detail = str(getattr(result, "stderr", "") or "").strip()
+    log_line("LHM autostart removal failed: "
+             f"rc={result.returncode} {detail}".strip())
+    return False, ("Could not remove LHM autostart — approve the "
+                   "admin prompt and try again")
+
+
+# ---------------------------------------------------------------------------
 # Live-graph support: a rolling sample buffer + polyline scaling
 # ---------------------------------------------------------------------------
 
