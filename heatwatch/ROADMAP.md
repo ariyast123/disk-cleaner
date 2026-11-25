@@ -16,9 +16,13 @@
    process names and watches the game like the built-in ones;
    custom games get a × on their row to remove them, and the
    five built-in games cannot be removed.
-4. **LHM autostart helper** — a guided one-time setup that
-   registers LibreHardwareMonitor to start elevated at boot
-   (Task Scheduler), so HeatWatch always has its source.
+4. **LHM autostart helper** — DONE (v1.4.0, Nov 24, 2026). A
+   guided one-time setup that registers LibreHardwareMonitor
+   to start elevated at boot (Task Scheduler), so HeatWatch
+   always has its source. A button in Settings opens a dialog
+   showing the current state, with Set up / Remove actions
+   (one admin approval each); the Settings card shows whether
+   autostart is on or off.
 5. **Idle baseline** — DONE (v1.3.1, Nov 23, 2026). Idle
    temperatures are sampled once a minute outside sessions
    (kept a week); the 24-hour median shows in the repaste
