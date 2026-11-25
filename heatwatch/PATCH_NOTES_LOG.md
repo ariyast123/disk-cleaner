@@ -124,3 +124,16 @@ stale at 1.2.5.)
   helper is fully independent of the app.
 - The helper now logs a 'relaunch issued' line at the end, so any
   future failure leaves clear evidence in update_build.log.
+
+## 2026-11-24 — v1.4.0
+
+LHM autostart helper: a "Set up LHM to start at boot…" button
+in Settings opens a guided one-time setup that registers
+LibreHardwareMonitor in Task Scheduler to start elevated at
+every sign-in, so HeatWatch always has its CPU source — one
+admin approval, and it can be removed again from the same
+dialog. The Settings card shows whether autostart is on or
+off, and the dialog says plainly when LHM is not installed
+instead of offering a dead button. New test rounds 20 (task
+registration and elevation) and 21 (the dialog); all 21 rounds
+pass.
