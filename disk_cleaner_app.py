@@ -96,7 +96,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.6"
+VERSION = "1.2.7"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -312,6 +312,7 @@ class DiskCleanerApp(ctk.CTk):
         self.ui_queue = queue.Queue()
         self.scanning = False
         self.cleaning = False
+        self._scan_total = 0  # file count from the pre-scan counting pass (0 = unknown)
         self.results = []            # list[core.FoundFile] from the last scan
         self.file_iids = {}          # tree iid -> FoundFile (current view)
         self.checked_paths = set()   # paths the user has ticked
@@ -335,8 +336,31 @@ class DiskCleanerApp(ctk.CTk):
             while True:
                 msg = self.ui_queue.get_nowait()
                 kind = msg[0]
-                if kind == "progress":
-                    self.status.configure(text=f"Scanning... {msg[1]} files checked")
+                if kind == "counting":
+                    self.status.configure(text="Counting files...")
+                elif kind == "scan_total":
+                    # The counting pass finished: switch the bar from its
+                    # indeterminate stripe to a real percentage.
+                    self._scan_total = msg[1]
+                    if self._scan_total > 0:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(0)
+                        self.status.configure(
+                            text="Scanning... 0 files checked (0%)"
+                        )
+                elif kind == "progress":
+                    n = msg[1]
+                    text = f"Scanning... {n} files checked"
+                    if self._scan_total:
+                        # Capped just below full: the count is an estimate
+                        # (unreadable files, single-file caches), and the
+                        # duplicate phase reports no progress, so 100%
+                        # is only set when the scan actually finishes.
+                        pct = min(n / self._scan_total, 0.99)
+                        text += f" ({pct * 100:.0f}%)"
+                        self.progress.set(pct)
+                    self.status.configure(text=text)
                 elif kind == "scan_done":
                     self._scan_done(msg[1], msg[2])
                 elif kind == "clean_progress":
@@ -880,22 +904,39 @@ class DiskCleanerApp(ctk.CTk):
         if temp_env and os.path.isdir(temp_env):
             temp_dirs.append(temp_env)
 
+        cache_targets = (
+            core.default_cache_targets() if self.caches_var.get() else ()
+        )
+        protected = own_folders()
+        include_system = self.full_var.get()
         args = dict(
             roots=roots,
             temp_dirs=temp_dirs,
-            cache_targets=core.default_cache_targets() if self.caches_var.get() else (),
+            cache_targets=cache_targets,
             large_bytes=self._int_setting(self.large_mb, 500) * 1024 * 1024,
             old_days=self._int_setting(self.old_days, 180),
             installer_days=self._int_setting(self.installer_days, 30),
             find_duplicates=self.dup_var.get(),
-            include_system=self.full_var.get(),
-            extra_protected=own_folders(),
+            include_system=include_system,
+            extra_protected=protected,
             progress=lambda n: self.ui_queue.put(("progress", n)),
             cancel_event=self.cancel_event,
         )
         want_hogs = self.hogs_var.get()
 
         def worker():
+            # Quick counting pass first, so the bar can show a real
+            # percentage instead of an indeterminate stripe.
+            self.ui_queue.put(("counting",))
+            total = core.count_files(
+                roots=roots,
+                temp_dirs=temp_dirs,
+                cache_targets=cache_targets,
+                include_system=include_system,
+                extra_protected=protected,
+                cancel_event=self.cancel_event,
+            )
+            self.ui_queue.put(("scan_total", total))
             found = core.scan(**args)
             hogs = core.system_hogs(self.cancel_event) if want_hogs else []
             self.ui_queue.put(("scan_done", found, hogs))
@@ -908,6 +949,7 @@ class DiskCleanerApp(ctk.CTk):
 
     def _scan_done(self, found, hogs):
         self.scanning = False
+        self._scan_total = 0
         self.scan_btn.configure(state="normal")
         self.cancel_btn.configure(state="disabled")
         self.clean_btn.configure(state="normal" if SEND2TRASH_OK else "disabled")
