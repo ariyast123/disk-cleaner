@@ -21,7 +21,7 @@ def test_full_list():
         sensor("CPU Total", 55.0, "/intelcpu/0/load/0", "Load"),
     ])
     result = core.parse_wmi_sensors(payload)
-    assert result == {"cpu": 94.0, "gpu": 72.0}, result
+    assert result == {"cpu": 94.0, "gpu": 72.0, "fan": 2100.0}, result
     print("PASS WMI list: package + GPU core, non-temps filtered")
 
 
@@ -29,12 +29,13 @@ def test_single_object_not_array():
     payload = json.dumps(
         sensor("CPU Package", 90.0, "/amdcpu/0/temperature/3"))
     assert core.parse_wmi_sensors(payload) == {"cpu": 90.0,
-                                               "gpu": None}
+                                               "gpu": None,
+                                               "fan": None}
     print("PASS a lone sensor arrives as an object, not an array")
 
 
 def test_garbage():
-    empty = {"cpu": None, "gpu": None}
+    empty = {"cpu": None, "gpu": None, "fan": None}
     assert core.parse_wmi_sensors("") == empty
     assert core.parse_wmi_sensors("not json") == empty
     assert core.parse_wmi_sensors("42") == empty
