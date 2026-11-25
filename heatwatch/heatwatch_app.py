@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -732,7 +732,7 @@ class HeatWatchApp(ctk.CTk):
                 now = time.time()
                 events = self.tracker.update(
                     now, games, temps["cpu"], temps["gpu"],
-                    temps["source"])
+                    temps["source"], temps.get("fan"))
                 warned = self.warner.update(now, temps["cpu"])
                 self.msg_queue.put(("sample", {
                     "temps": temps, "games": games, "events": events,
@@ -809,7 +809,8 @@ class HeatWatchApp(ctk.CTk):
                     f"Session ended: {data['game']} — "
                     f"{fmt_duration(data['duration_s'])}, peak CPU "
                     f"{fmt_temp(data['peak_cpu'])}, peak GPU "
-                    f"{fmt_temp(data['peak_gpu'])}")
+                    f"{fmt_temp(data['peak_gpu'])}, fan "
+                    f"{core.format_fan_range(data.get('fan_low'), data.get('fan_peak'))}")
                 # Post-game heat is not idle: keep the baseline
                 # clean for five minutes after a session ends.
                 self._idle_blocked_until = (
@@ -864,6 +865,7 @@ class HeatWatchApp(ctk.CTk):
             self.session_detail.configure(
                 text=f"Peak CPU {fmt_temp(current['peak_cpu'])}  •  "
                      f"Peak GPU {fmt_temp(current['peak_gpu'])}  •  "
+                     f"Fan {core.format_fan_range(current.get('fan_low'), current.get('fan_peak'))}  •  "
                      f"Over the line: CPU "
                      f"{fmt_duration(current['sec_above_cpu'])}, GPU "
                      f"{fmt_duration(current['sec_above_gpu'])}")
@@ -976,6 +978,9 @@ class HeatWatchApp(ctk.CTk):
                     f"peak GPU {fmt_temp(record.get('peak_gpu'))}  •  "
                     f"over line "
                     f"{fmt_duration(record.get('sec_above_cpu'))}")
+            if record.get("fan_peak") is not None:
+                text += (f"  •  fan "
+                         f"{core.format_fan_range(record.get('fan_low'), record.get('fan_peak'))}")
             dot_color = temp_color(record.get("peak_cpu"),
                                    record.get("warn_cpu") or 95)
             ctk.CTkLabel(row, text="●",
@@ -1030,7 +1035,9 @@ class HeatWatchApp(ctk.CTk):
         ctk.CTkLabel(window,
                      text=f"Peak CPU {fmt_temp(record.get('peak_cpu'))}"
                           f"  •  Peak GPU "
-                          f"{fmt_temp(record.get('peak_gpu'))}",
+                          f"{fmt_temp(record.get('peak_gpu'))}"
+                          + (f"  •  Fan {core.format_fan_range(record.get('fan_low'), record.get('fan_peak'))}"
+                             if record.get("fan_peak") is not None else ""),
                      font=ctk.CTkFont(size=12),
                      text_color=MUTED).pack(anchor="w", padx=18,
                                             pady=(0, 8))
