@@ -9,7 +9,11 @@ the median peak of recent full-length sessions. The point is a
 data-driven answer to "do I need to repaste yet?". Every session
 also keeps its temperature samples, and each history row has a
 Graph button that opens a small CPU/GPU line chart for that
-session, with the warning lines drawn in. It also tracks idle
+session, with the warning lines drawn in. Where
+LibreHardwareMonitor exposes fan RPM, each session also records
+its fan range (lowest/highest RPM) next to the temperatures — a
+fan pinned at its maximum while temperatures keep climbing is
+the extra evidence the repaste verdict was missing. It also tracks idle
 temperatures outside sessions and shows the 24-hour median as
 an idle baseline in the verdict card — a rising idle baseline
 is an early dust/paste signal.
