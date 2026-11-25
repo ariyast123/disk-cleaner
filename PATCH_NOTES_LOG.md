@@ -80,3 +80,14 @@ the weekly digest job reads the last 7 days and posts them in chat
   helper is fully independent of the app.
 - The helper now logs a 'relaunch issued' line at the end, so any
   future failure leaves clear evidence in update_build.log.
+
+## 2026-11-24 — v1.2.7
+
+- The scan progress bar now shows a real percentage. Before
+  scanning, the app does a quick counting pass over the folders
+  it is about to scan, then the bar fills from 0% to 100% as
+  files are checked.
+- The live "files checked" counter is still there, now with the
+  percentage next to it.
+- The bar stops just below 100% while the duplicate check runs
+  and reaches full when the scan actually finishes.
