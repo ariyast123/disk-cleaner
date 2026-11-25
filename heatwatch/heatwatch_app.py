@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.3.2"
+VERSION = "1.4.0"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -324,6 +324,12 @@ class HeatWatchApp(ctk.CTk):
         self._stop = threading.Event()
         self.msg_queue = queue.Queue()
         self._log_lines = []
+        self._lhm_dialog = None
+        self._lhm_status_label = None
+        self._lhm_setup_button = None
+        self._lhm_remove_button = None
+        self._lhm_exe_path = None
+        self._lhm_autostart_label = None
 
         self.title("HeatWatch")
         self.geometry("1140x760")
@@ -342,6 +348,8 @@ class HeatWatchApp(ctk.CTk):
 
         threading.Thread(target=self._sample_loop, daemon=True).start()
         threading.Thread(target=self._check_update_worker,
+                         daemon=True).start()
+        threading.Thread(target=self._check_lhm_autostart_worker,
                          daemon=True).start()
         self.after(150, self._drain_queue)
         self.after(700, self._pulse_orb)
@@ -624,7 +632,17 @@ class HeatWatchApp(ctk.CTk):
                  "LHM, only the GPU is visible, via nvidia-smi.",
             font=ctk.CTkFont(size=11), text_color=FAINT,
             wraplength=640, justify="left", anchor="w").pack(
-                anchor="w", padx=16, pady=(4, 12))
+                anchor="w", padx=16, pady=(4, 8))
+        lhm_row = ctk.CTkFrame(settings_card, fg_color="transparent")
+        lhm_row.pack(fill="x", padx=16, pady=(0, 12))
+        ctk.CTkButton(lhm_row, text="Set up LHM to start at boot…",
+                      fg_color=CARD, hover_color="#1D2347",
+                      text_color=TEXT,
+                      command=self._open_lhm_autostart).pack(side="left")
+        self._lhm_autostart_label = ctk.CTkLabel(
+            lhm_row, text="LHM autostart: not checked yet",
+            font=ctk.CTkFont(size=11), text_color=FAINT)
+        self._lhm_autostart_label.pack(side="left", padx=(10, 0))
 
         log_card = ctk.CTkFrame(main, fg_color=PANEL,
                                 border_color=PANEL_EDGE,
@@ -733,6 +751,12 @@ class HeatWatchApp(ctk.CTk):
                     self._show_update_banner(payload)
                 elif kind == "update_downloaded":
                     self._update_downloaded(payload)
+                elif kind == "lhm_autostart":
+                    self._refresh_lhm_autostart_label(payload)
+                elif kind == "lhm_status":
+                    self._apply_lhm_status(payload)
+                elif kind == "lhm_setup_done":
+                    self._apply_lhm_setup_result(payload)
         except queue.Empty:
             pass
         if not self._stop.is_set():
@@ -1203,6 +1227,168 @@ class HeatWatchApp(ctk.CTk):
             "— avoid look-alike download sites.\n\n"
             "Run it as administrator, keep it open, and for the "
             "fastest feed tick Options > Remote Web Server.")
+
+    # -- LHM autostart helper --------------------------------------------
+
+    def _check_lhm_autostart_worker(self):
+        if self._stop.is_set():
+            return
+        if not core.is_windows():
+            self.msg_queue.put(("lhm_autostart", None))
+            return
+        self.msg_queue.put(("lhm_autostart", core.lhm_task_exists()))
+
+    def _refresh_lhm_autostart_label(self, exists):
+        if self._lhm_autostart_label is None:
+            return
+        if exists is None:
+            text = "LHM autostart: Windows only"
+        elif exists:
+            text = "LHM autostart: on"
+        else:
+            text = "LHM autostart: off"
+        self._lhm_autostart_label.configure(text=text)
+
+    def _open_lhm_autostart(self):
+        if (self._lhm_dialog is not None
+                and self._lhm_dialog.winfo_exists()):
+            self._lhm_dialog.focus()
+            return
+        self._lhm_exe_path = core.find_lhm_exe(self.settings)
+        window = ctk.CTkToplevel(self)
+        window.title("LibreHardwareMonitor autostart")
+        window.geometry("560x380")
+        window.resizable(False, False)
+        self._lhm_dialog = window
+        window.protocol("WM_DELETE_WINDOW", self._close_lhm_dialog)
+        ctk.CTkLabel(window, text="Start LibreHardwareMonitor at boot",
+                     font=ctk.CTkFont(size=16, weight="bold"),
+                     text_color=TEXT).pack(anchor="w", padx=18,
+                                            pady=(16, 6))
+        ctk.CTkLabel(
+            window,
+            text="HeatWatch can only read CPU temperatures while "
+                 "LibreHardwareMonitor is running. This one-time "
+                 "setup registers it in Task Scheduler so it starts "
+                 "elevated at every sign-in — one admin approval, "
+                 "and you can remove it again here any time. If "
+                 "you already start LHM another way, remove that "
+                 "first so it does not launch twice.",
+            font=ctk.CTkFont(size=12), text_color=MUTED,
+            wraplength=520, justify="left", anchor="w").pack(
+                anchor="w", padx=18, pady=(0, 10))
+        self._lhm_status_label = ctk.CTkLabel(
+            window, text="Status: checking…",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT,
+            wraplength=520, justify="left", anchor="w")
+        self._lhm_status_label.pack(anchor="w", padx=18, pady=(0, 14))
+        row = ctk.CTkFrame(window, fg_color="transparent")
+        row.pack(fill="x", padx=18, pady=(0, 10))
+        self._lhm_setup_button = ctk.CTkButton(
+            row, text="Set up autostart", fg_color=VIOLET,
+            hover_color="#6A4DF0", text_color="white",
+            command=self._setup_lhm_autostart, state="disabled")
+        self._lhm_setup_button.pack(side="left", padx=(0, 8))
+        self._lhm_remove_button = ctk.CTkButton(
+            row, text="Remove autostart", fg_color=CARD,
+            hover_color="#1D2347", text_color=TEXT,
+            command=self._remove_lhm_autostart, state="disabled")
+        self._lhm_remove_button.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(row, text="Close", fg_color="transparent",
+                      text_color=MUTED,
+                      command=self._close_lhm_dialog).pack(side="right")
+        if not core.is_windows():
+            self._apply_lhm_status(None)
+        elif not self._lhm_exe_path:
+            self._lhm_status_label.configure(
+                text="LibreHardwareMonitor was not found on this PC. "
+                     "Install it first:\n"
+                     "  winget install "
+                     "LibreHardwareMonitor.LibreHardwareMonitor")
+        else:
+            threading.Thread(target=self._lhm_status_worker,
+                             daemon=True).start()
+
+    def _close_lhm_dialog(self):
+        if self._lhm_dialog is not None:
+            try:
+                self._lhm_dialog.destroy()
+            except Exception:
+                pass
+        self._lhm_dialog = None
+        self._lhm_status_label = None
+        self._lhm_setup_button = None
+        self._lhm_remove_button = None
+
+    def _lhm_status_worker(self):
+        if self._stop.is_set():
+            return
+        self.msg_queue.put(("lhm_status", core.lhm_task_exists()))
+
+    def _apply_lhm_status(self, exists):
+        self._refresh_lhm_autostart_label(exists)
+        if self._lhm_status_label is None:
+            return
+        if exists is None:
+            self._lhm_status_label.configure(
+                text="LHM autostart is available on Windows only.")
+            return
+        if exists:
+            self._lhm_status_label.configure(
+                text="Status: set up — LibreHardwareMonitor starts "
+                     "elevated at every sign-in.")
+            if self._lhm_setup_button is not None:
+                self._lhm_setup_button.configure(state="disabled")
+            if self._lhm_remove_button is not None:
+                self._lhm_remove_button.configure(state="normal")
+        else:
+            self._lhm_status_label.configure(
+                text="Status: not set up yet.")
+            if self._lhm_setup_button is not None:
+                self._lhm_setup_button.configure(state="normal")
+            if self._lhm_remove_button is not None:
+                self._lhm_remove_button.configure(state="disabled")
+
+    def _setup_lhm_autostart(self):
+        if not self._lhm_exe_path:
+            return
+        self._set_lhm_buttons_busy()
+        threading.Thread(target=self._lhm_setup_worker,
+                         args=(True,), daemon=True).start()
+
+    def _remove_lhm_autostart(self):
+        self._set_lhm_buttons_busy()
+        threading.Thread(target=self._lhm_setup_worker,
+                         args=(False,), daemon=True).start()
+
+    def _set_lhm_buttons_busy(self):
+        if self._lhm_status_label is not None:
+            self._lhm_status_label.configure(
+                text="Working — approve the admin prompt if one "
+                     "appears…")
+        if self._lhm_setup_button is not None:
+            self._lhm_setup_button.configure(state="disabled")
+        if self._lhm_remove_button is not None:
+            self._lhm_remove_button.configure(state="disabled")
+
+    def _lhm_setup_worker(self, setup):
+        if self._stop.is_set():
+            return
+        if setup:
+            result = core.create_lhm_task(self._lhm_exe_path)
+        else:
+            result = core.remove_lhm_task()
+        self.msg_queue.put(("lhm_setup_done", result))
+
+    def _apply_lhm_setup_result(self, result):
+        ok, message = result
+        self._log(message)
+        if self._lhm_status_label is not None:
+            self._lhm_status_label.configure(text=message)
+        # Re-read the real state: a failed setup leaves the old
+        # state in place, and the buttons must match it.
+        threading.Thread(target=self._lhm_status_worker,
+                         daemon=True).start()
 
     # -- Logging / tray --------------------------------------------------------
 
