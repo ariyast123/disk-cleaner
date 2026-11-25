@@ -477,9 +477,10 @@ def _version_key(folder_name):
     return tuple(parts) or (-1,)
 
 
-def find_proton_exe(settings=None, bases=None):
+def find_proton_exe(settings=None, bases=None, winreg_module=None):
     """Locate the Proton client: settings override first, then the
-    versioned install folders (newest version wins), then flat paths."""
+    versioned install folders (newest version wins), then flat paths,
+    then the Add/Remove Programs registry keys as a last resort."""
     override = (settings or {}).get("proton_path", "")
     if override and os.path.isfile(override):
         return override
@@ -503,6 +504,138 @@ def find_proton_exe(settings=None, bases=None):
     for candidate in PROTON_EXE_CANDIDATES:
         if os.path.isfile(candidate):
             return candidate
+    return find_proton_exe_via_uninstall_key(winreg_module)
+
+
+# Registry fallback for Proton's location: if a future Proton update
+# changes the install layout so the folder scan above finds nothing,
+# the uninstall entry still names the real install folder. Read-only,
+# Windows-only, and it never guesses — a path is returned only when
+# the exe file really exists there. Any registry problem degrades to
+# None, and non-Windows platforms (no winreg) always return None.
+_UNINSTALL_KEY_PATHS = (
+    ("HKEY_LOCAL_MACHINE",
+     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ("HKEY_LOCAL_MACHINE",
+     r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ("HKEY_CURRENT_USER",
+     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+)
+
+
+def _folder_from_registry_value(raw):
+    """Turn an InstallLocation / DisplayIcon / UninstallString value
+    into the install folder: a folder stays a folder, a file yields
+    its folder (DisplayIcon may carry an ',0' icon index)."""
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip().strip('"').strip()
+    if "," in text:
+        head, _, tail = text.rpartition(",")
+        if tail.strip().isdigit():
+            text = head.strip().strip('"').strip()
+    if not text:
+        return None
+    if os.path.isfile(text):
+        return os.path.dirname(text)
+    if os.path.isdir(text):
+        return text
+    return None
+
+
+def _registry_install_dirs(winreg_module):
+    """Yield install folders claimed by Proton VPN uninstall entries.
+
+    Only entries whose DisplayName names Proton VPN count; anything
+    else is skipped, so another app's folder can never be mistaken
+    for Proton's. Never raises.
+    """
+    for hive_name, subkey in _UNINSTALL_KEY_PATHS:
+        try:
+            hive = getattr(winreg_module, hive_name)
+            key = winreg_module.OpenKey(hive, subkey)
+        except (OSError, AttributeError, ValueError):
+            continue
+        try:
+            index = 0
+            while True:
+                try:
+                    name = winreg_module.EnumKey(key, index)
+                except OSError:
+                    break
+                index += 1
+                try:
+                    sub = winreg_module.OpenKey(key, name)
+                except OSError:
+                    continue
+                try:
+                    try:
+                        display, _ = winreg_module.QueryValueEx(sub, "DisplayName")
+                    except OSError:
+                        display = ""
+                    if (isinstance(display, str)
+                            and "proton" in display.lower()
+                            and "vpn" in display.lower()):
+                        for value_name in ("InstallLocation", "DisplayIcon",
+                                           "UninstallString"):
+                            try:
+                                raw, _ = winreg_module.QueryValueEx(sub, value_name)
+                            except OSError:
+                                continue
+                            folder = _folder_from_registry_value(raw)
+                            if folder:
+                                yield folder
+                finally:
+                    try:
+                        winreg_module.CloseKey(sub)
+                    except OSError:
+                        pass
+        finally:
+            try:
+                winreg_module.CloseKey(key)
+            except OSError:
+                pass
+
+
+def _scan_proton_install_folder(folder):
+    """Best Proton exe in a folder: flat first, then its versioned
+    subfolders, newest version first, Client name first."""
+    for exe_name in PROTON_EXE_NAMES:
+        path = os.path.join(folder, exe_name)
+        if os.path.isfile(path):
+            return path
+    try:
+        entries = os.listdir(folder)
+    except OSError:
+        return None
+    versioned = sorted(
+        (name for name in entries if _version_key(name) != (-1,)),
+        key=_version_key, reverse=True)
+    for name in versioned:
+        for exe_name in PROTON_EXE_NAMES:
+            path = os.path.join(folder, name, exe_name)
+            if os.path.isfile(path):
+                return path
+    return None
+
+
+def find_proton_exe_via_uninstall_key(winreg_module=None):
+    """Last-resort Proton lookup through the uninstall registry keys.
+    Pass a fake winreg module in tests; on real Windows the module is
+    imported lazily. Returns an existing exe path, or None."""
+    if winreg_module is None:
+        try:
+            import winreg as winreg_module
+        except ImportError:
+            return None
+    try:
+        folders = _registry_install_dirs(winreg_module)
+        for folder in folders:
+            found = _scan_proton_install_folder(folder)
+            if found:
+                return found
+    except Exception:
+        return None
     return None
 
 
