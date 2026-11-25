@@ -425,8 +425,81 @@ else:
         fails.append("_write_update_helper: launched exe should be sys.executable")
     if 'copy /Y "%BUILT%" "%LAUNCHED%"' not in written:
         fails.append("_write_update_helper: written helper lacks the copy-back")
-if popen_calls2 != [["cmd", "/c", helper_path]]:
-    fails.append(f"_write_update_helper: helper not started detached: {popen_calls2}")
+if popen_calls2 != [["explorer.exe", helper_path]]:
+    fails.append(f"_write_update_helper: helper should be handed to Explorer: {popen_calls2}")
+# Fallback: if Explorer cannot start, the helper runs detached via cmd.
+popen_calls3 = []
+
+
+def _popen_fallback(args, **kw):
+    popen_calls3.append((args, kw))
+    if args[0] == "explorer.exe":
+        raise OSError("no explorer")
+    return None
+
+
+gui.project_folder = lambda: HELPER_DIR
+gui.subprocess.Popen = _popen_fallback
+try:
+    app._write_update_helper()
+finally:
+    gui.project_folder = real_proj_folder
+    gui.subprocess.Popen = real_popen2
+if len(popen_calls3) != 2 or popen_calls3[0][0] != ["explorer.exe", helper_path] \
+        or popen_calls3[1][0] != ["cmd", "/c", helper_path]:
+    fails.append(f"_write_update_helper: Explorer failure should fall back to cmd /c: {popen_calls3}")
+
+# --- 13) Biggest folders tab: ranked rows, open, empty roots -------------
+BIG = os.path.join(BASE, "bigfold")
+os.makedirs(os.path.join(BIG, "games"), exist_ok=True)
+os.makedirs(os.path.join(BIG, "photos"), exist_ok=True)
+with open(os.path.join(BIG, "games", "g.bin"), "wb") as fh:
+    fh.truncate(3 * 1024 * 1024)
+with open(os.path.join(BIG, "photos", "p.bin"), "wb") as fh:
+    fh.truncate(1024 * 1024)
+app.custom_folders = [BIG]
+app._find_biggest_folders()
+if not wait_until(app, lambda: not app.biggest_running and app.biggest_entries, timeout=20):
+    fails.append("biggest: run did not finish")
+else:
+    paths = [os.path.basename(e.path) for e in app.biggest_entries]
+    if paths != ["games", "photos"]:
+        fails.append(f"biggest: expected [games, photos], got {paths}")
+    if len(app.biggest_frame.winfo_children()) != 2:
+        fails.append(f"biggest: expected 2 cards, got {len(app.biggest_frame.winfo_children())}")
+    if "Top 2 folders" not in app.biggest_status.cget("text"):
+        fails.append(f"biggest: status wrong: {app.biggest_status.cget('text')}")
+    if str(app.biggest_btn.cget("state")) != "normal":
+        fails.append("biggest: button not re-enabled after the run")
+    # Open opens the folder itself (not its parent).
+    opened = []
+    had_startfile = hasattr(os, "startfile")
+    real_startfile = getattr(os, "startfile", None)
+    os.startfile = lambda p: opened.append(p)
+    try:
+        gui.DiskCleanerApp._open_directory(os.path.join(BIG, "games"))
+        if opened != [os.path.join(BIG, "games")]:
+            fails.append(f"biggest open: got {opened}")
+    finally:
+        if had_startfile:
+            os.startfile = real_startfile
+        else:
+            del os.startfile
+# No roots -> info dialog, no run started.
+for var in app.folder_vars.values():
+    var.set(False)
+app.custom_folders = []
+infos = []
+real_info = gui.messagebox.showinfo
+gui.messagebox.showinfo = lambda *a, **k: infos.append(a)
+try:
+    app._find_biggest_folders()
+finally:
+    gui.messagebox.showinfo = real_info
+if not infos or "Nothing to scan" not in str(infos[0]):
+    fails.append(f"biggest: empty roots should show the info dialog, got {infos}")
+if app.biggest_running:
+    fails.append("biggest: run must not start with no roots")
 
 app.destroy()
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
