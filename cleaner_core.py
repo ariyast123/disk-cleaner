@@ -385,6 +385,78 @@ def count_files(roots, temp_dirs=(), cache_targets=(), include_system=False,
     return total
 
 
+@dataclass
+class FolderSize:
+    path: str
+    size: int  # total bytes of the files inside, all levels deep
+    file_count: int
+
+
+def top_folders(roots, limit=10, include_system=False, extra_protected=(),
+                cancel_event=None):
+    """Rank the biggest immediate subfolders of the given roots.
+
+    Report-only: this only measures sizes, it never lists files for
+    deletion and never deletes anything. One walk per root, with the
+    same directory skip-list and protected-area pruning the scanner
+    uses, so a protected or skipped folder never contributes its
+    size, and per-file protection is applied too (e.g. files under a
+    "Package Cache" folder anywhere). Files sitting directly in a
+    root belong to no subfolder and are left out. Returns the
+    largest `limit` entries, biggest first; folders with no files
+    are not reported.
+    """
+    skip_names = FULL_SCAN_SKIP_DIR_NAMES if include_system else SKIP_DIR_NAMES
+    prot_prefixes, prot_root = _protected_areas()
+    if extra_protected:
+        prot_prefixes = prot_prefixes + [
+            os.path.normcase(os.path.abspath(p)) for p in extra_protected
+        ]
+    protected = frozenset(os.path.abspath(d).lower() for d in prot_prefixes)
+
+    totals = {}  # normcase(top folder) -> [size, file_count, display path]
+    for root in roots:
+        if cancel_event is not None and cancel_event.is_set():
+            break
+        if not root or not os.path.isdir(root):
+            continue
+        root_abs = os.path.abspath(root)
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if d.lower() not in skip_names
+                and not os.path.islink(os.path.join(dirpath, d))
+                and os.path.abspath(os.path.join(dirpath, d)).lower()
+                not in protected
+            ]
+            if os.path.abspath(dirpath) == root_abs:
+                continue  # files directly in the root belong to no subfolder
+            first = os.path.relpath(dirpath, root_abs).split(os.sep)[0]
+            top = os.path.join(root_abs, first)
+            entry = totals.setdefault(os.path.normcase(top), [0, 0, top])
+            for name in filenames:
+                full = os.path.join(dirpath, name)
+                if os.path.islink(full):
+                    continue
+                if _is_protected(full, prot_prefixes, prot_root):
+                    continue
+                try:
+                    size = os.path.getsize(full)
+                except OSError:
+                    continue
+                entry[0] += size
+                entry[1] += 1
+    ranked = sorted(
+        (e for e in totals.values() if e[1] > 0),
+        key=lambda e: e[0], reverse=True,
+    )
+    return [FolderSize(path=e[2], size=e[0], file_count=e[1])
+            for e in ranked[:limit]]
+
+
 def _raw_folder_size(path):
     """Total size of a folder tree without the safety skip-list.
 
