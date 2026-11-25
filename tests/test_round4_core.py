@@ -443,4 +443,53 @@ if [len(b) for b in seen_batches] != [2, 2, 1]:
 if (moved, failed, processed) != (5, [], 5):
     fails.append(f"recycle: chunked run expected (5, [], 5), got {(moved, failed, processed)}")
 
+# --- 15) top_folders: biggest subfolders, ranked, with guards ------------
+BF = f"{BASE}/bigfold"
+make(f"{BF}/games/huge.dat", 5 * 1024 * 1024, 10)
+make(f"{BF}/games/small.txt", 100, 10)
+make(f"{BF}/games/sub/nested.bin", 1024 * 1024, 10)  # counts toward games
+make(f"{BF}/photos/pic1.bin", 2 * 1024 * 1024, 10)
+make(f"{BF}/photos/pic2.bin", 1024 * 1024, 10)
+make(f"{BF}/docs/note.txt", 500, 10)
+make(f"{BF}/loose.bin", 9 * 1024 * 1024, 10)  # directly in root: not attributed
+os.makedirs(f"{BF}/truly_empty", exist_ok=True)
+make(f"{BF}/node_modules/pkg/lib.bin", 8 * 1024 * 1024, 10)  # skipped dir
+make(f"{BF}/Package Cache/setup.exe", 4 * 1024 * 1024, 10)  # protected name
+top = core.top_folders([BF])
+names = [os.path.basename(t.path) for t in top]
+if names != ["games", "photos", "docs"]:
+    fails.append(f"top_folders: expected [games, photos, docs], got {names}")
+else:
+    if top[0].size != 5 * 1024 * 1024 + 100 + 1024 * 1024:
+        fails.append(f"top_folders: games size wrong: {top[0].size}")
+    if top[0].file_count != 3:
+        fails.append(f"top_folders: games should count 3 files, got {top[0].file_count}")
+    if top[1].size != 3 * 1024 * 1024 or top[2].size != 500:
+        fails.append(f"top_folders: photos/docs sizes wrong: {[t.size for t in top]}")
+if any(t.path == BF for t in top):
+    fails.append("top_folders: files directly in the root must not form an entry")
+if any(n in names for n in ("truly_empty", "node_modules", "Package Cache")):
+    fails.append(f"top_folders: empty/skipped/protected folders leaked in: {names}")
+if [os.path.basename(t.path) for t in core.top_folders([BF], limit=2)] != ["games", "photos"]:
+    fails.append("top_folders: limit=2 should keep only the top two")
+if [os.path.basename(t.path) for t in core.top_folders(
+        [BF], extra_protected=[f"{BF}/photos"])] != ["games", "docs"]:
+    fails.append("top_folders: extra_protected folder should be excluded")
+if core.top_folders([]) != []:
+    fails.append("top_folders: empty roots should return []")
+if core.top_folders([f"{BASE}/does_not_exist"]) != []:
+    fails.append("top_folders: nonexistent root should return []")
+ev = threading.Event()
+ev.set()
+if core.top_folders([BF], cancel_event=ev) != []:
+    fails.append("top_folders: pre-set cancel should return []")
+# Symlinked folder must not be followed or counted.
+os.makedirs(f"{BF}/real_target", exist_ok=True)
+make(f"{BF}/real_target/big.bin", 7 * 1024 * 1024, 10)
+os.symlink(f"{BF}/real_target", f"{BF}/link_dir")
+top2 = core.top_folders([BF])
+names2 = [os.path.basename(t.path) for t in top2]
+if names2[0] != "real_target" or "link_dir" in names2:
+    fails.append(f"top_folders: symlink must not be followed/counted: {names2}")
+
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
