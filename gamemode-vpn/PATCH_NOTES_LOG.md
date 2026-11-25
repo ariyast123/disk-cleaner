@@ -289,3 +289,19 @@ pyflakes clean.
   helper is fully independent of the app.
 - The helper now logs a 'relaunch issued' line at the end, so any
   future failure leaves clear evidence in update_build.log.
+
+## 2026-11-24 — v1.4.2
+
+- Registry uninstall-key fallback (roadmap item 1's leftover):
+  if a future Proton update moves its install folder, GameMode
+  still finds it. `find_proton_exe` now falls back to the
+  Add/Remove Programs registry entry (InstallLocation,
+  DisplayIcon, or UninstallString) when the folder scan and the
+  flat paths find nothing. Only entries actually named Proton VPN
+  count, and a path is only used when the exe file really exists
+  there — a missing or broken registry entry just means "not
+  found", never a guess. Covered by new test round 25 (fake
+  winreg: versioned InstallLocation, flat folder,
+  DisplayIcon/UninstallString derivation, non-Proton entries
+  ignored, broken registry degrades to None, precedence kept).
+  All 25 rounds pass, pyflakes clean.
