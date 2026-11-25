@@ -46,3 +46,14 @@ worst bug this app can ship.
    failure. Watch for Proton UI renames in future updates; if the
    buttons move, the fallback covers it and the names in
    `AUTO_BUTTONS` (gamemode_core.py) are the fix.
+7. **Registry uninstall-key fallback — DONE in v1.4.2.**
+   `find_proton_exe` now falls back to the Add/Remove Programs
+   registry keys (InstallLocation, DisplayIcon, UninstallString)
+   when the folder scan and the flat paths find nothing, so a
+   future Proton layout change cannot lose the exe. Only entries
+   whose DisplayName names Proton VPN count, and a path is
+   returned only when the exe file really exists — a missing or
+   broken registry just means "not found", never a guess. Covered
+   by test round 25 (fake winreg: versioned InstallLocation,
+   flat folder, DisplayIcon/UninstallString derivation,
+   non-Proton entries ignored, broken registry degrades to None).
