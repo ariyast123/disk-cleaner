@@ -29,6 +29,11 @@
    verdict card next to the gaming peaks, and the five
    minutes after a session ends are skipped so post-game
    heat never pollutes it.
-6. **Fan-speed capture** — where LHM exposes fan RPM, record
-   the session's fan range alongside temps (a maxed fan with
-   rising temps strengthens the repaste verdict).
+6. **Fan-speed capture** — DONE (v1.4.1, Nov 24, 2026).
+   Where LHM exposes fan RPM (web feed first, WMI filling in
+   when it already runs for the temperatures), each session
+   records its fan range (lowest/highest RPM), shown live in
+   the session card, in history rows and in the graph window.
+   A session with no fan sensor shows a dash, never a guess,
+   and the fan reading never triggers an extra probe, so
+   polling costs nothing extra.
