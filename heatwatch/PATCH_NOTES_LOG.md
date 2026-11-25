@@ -137,3 +137,19 @@ off, and the dialog says plainly when LHM is not installed
 instead of offering a dead button. New test rounds 20 (task
 registration and elevation) and 21 (the dialog); all 21 rounds
 pass.
+
+## 2026-11-24 — v1.4.1
+
+- Fan-speed capture: wherever LibreHardwareMonitor exposes fan
+  RPM (web feed first, WMI filling in when it already runs for
+  the temperatures), each session now records its fan range —
+  lowest and highest RPM while the game ran — shown live in
+  the session card, in every history row, and in the session
+  graph window. A session with no fan sensor shows a dash,
+  never a guess, and the fan reading never triggers an extra
+  probe on its own, so polling costs nothing extra. A fan
+  pinned at its maximum while temperatures keep climbing is
+  now visible next to the peaks, which is the extra evidence
+  the repaste verdict was missing. New test round 22 covers
+  the web/WMI fan parsing, the merge rules, the per-session
+  range and the range formatting; all 22 rounds pass.
