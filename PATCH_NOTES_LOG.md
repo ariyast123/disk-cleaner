@@ -91,3 +91,14 @@ the weekly digest job reads the last 7 days and posts them in chat
   percentage next to it.
 - The bar stops just below 100% while the duplicate check runs
   and reaches full when the scan actually finishes.
+
+## 2026-11-24 — v1.2.8
+
+- A new "Biggest folders" tab ranks the biggest subfolders of the
+  folders you scan, with a size bar and file count for each, so you
+  can see where space goes before scanning for individual files.
+- Each row has an Open button that opens the folder in Explorer.
+- Sizes are measured only — nothing is deleted from this view.
+- Also fixed a stale test: the update helper is launched through
+  Explorer since v1.2.6, but the test still expected the old direct
+  launch; it now checks the Explorer launch and its fallback.
