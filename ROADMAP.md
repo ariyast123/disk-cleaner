@@ -57,9 +57,20 @@ confirmation, no admin requirement, UI text in English.
    (Also fixed round 5's stale helper assertion: the build line
    appends with `>>` because the helper already truncates the log
    with its header line; the test now expects the append form.)
-5. **Scan progress with a percentage** — quick counting pass or
-   running estimate so the bar shows % instead of an indeterminate
-   stripe; keep the live files-checked counter.
+5. **Scan progress with a percentage — DONE (Nov 24, 2026, v1.2.7).**
+   The app now does a quick counting pass before scanning
+   (`cleaner_core.count_files()`: walks the same roots with the
+   same skip-list and protected-area pruning, but never stats a
+   file, so it is much faster than the scan itself), then the bar
+   fills from 0% to 100% as files are checked instead of showing
+   an indeterminate stripe; the live files-checked counter is
+   still there, now with the percentage next to it. The count is
+   an estimate (unreadable files, single-file caches), so the bar
+   is capped at 99% mid-scan and only reaches full when the scan
+   actually finishes. Covered by new tests in round 8 (count vs
+   scan counter, skip-list in both modes, cache targets, temp
+   dedup, protected dirs, cancel, GUI bar behaviour, end-to-end
+   scan); full suite green.
 6. **Biggest-folders view** — a simple visual breakdown (top folders
    by size) on the System tab or its own tab, so he sees where space
    goes before scanning.
