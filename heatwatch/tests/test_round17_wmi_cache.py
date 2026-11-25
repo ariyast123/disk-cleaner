@@ -62,7 +62,7 @@ def test_merge_semantics_unchanged():
     probe = Counting(web=None, wmi={"cpu": 88.0, "gpu": None},
                      smi=69.0)
     sample = core.collect_temps(readers=probe.readers(), now=4000.0)
-    assert sample == {"cpu": 88.0, "gpu": 69.0,
+    assert sample == {"cpu": 88.0, "gpu": 69.0, "fan": None,
                       "source": "LHM WMI + nvidia-smi"}, sample
     core._reset_source_caches()
     probe = Counting(web={"cpu": None, "gpu": 71.0},
