@@ -321,6 +321,70 @@ def _iter_files(roots, cancel_event=None, skip_names=None, protected_dirs=()):
                 yield os.path.normpath(full), st.st_size, st.st_mtime
 
 
+def _count_in_tree(root, skip_names, protected, cancel_event=None):
+    """Count files under root, pruning exactly like _iter_files.
+
+    No os.stat calls: only directory listings and symlink checks, so
+    this is the quick pass the progress bar's total comes from."""
+    if not root or not os.path.isdir(root):
+        return 0
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        if cancel_event is not None and cancel_event.is_set():
+            return total
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d.lower() not in skip_names
+            and not os.path.islink(os.path.join(dirpath, d))
+            and os.path.abspath(os.path.join(dirpath, d)).lower()
+            not in protected
+        ]
+        for name in filenames:
+            if not os.path.islink(os.path.join(dirpath, name)):
+                total += 1
+    return total
+
+
+def count_files(roots, temp_dirs=(), cache_targets=(), include_system=False,
+                extra_protected=(), cancel_event=None):
+    """Quick counting pass: how many files scan() is about to walk.
+
+    Walks the same roots scan() walks (cache-target folders, scan roots
+    plus temp dirs) with the same directory skip-list and protected-area
+    pruning, but never stats a file, so it runs much faster than the
+    scan itself. The number is an estimate for the progress bar, not an
+    exact promise: files that turn out unreadable are counted here but
+    skipped by the scan, and single-file cache targets are counted here
+    but never bump the scan counter - so the bar is capped just below
+    100% until the scan finishes and sets it to full.
+    """
+    skip_names = FULL_SCAN_SKIP_DIR_NAMES if include_system else SKIP_DIR_NAMES
+    prot_prefixes, prot_root = _protected_areas()
+    if extra_protected:
+        prot_prefixes = prot_prefixes + [
+            os.path.normcase(os.path.abspath(p)) for p in extra_protected
+        ]
+    protected = frozenset(os.path.abspath(d).lower() for d in prot_prefixes)
+
+    total = 0
+    for _label, path, _note, _pre in cache_targets:
+        if cancel_event is not None and cancel_event.is_set():
+            return total
+        path = os.path.normpath(path)
+        if os.path.isfile(path):
+            if not _is_protected(path, prot_prefixes, prot_root):
+                total += 1
+            continue
+        total += _count_in_tree(path, skip_names, protected, cancel_event)
+    walk_roots = list(roots) + [t for t in temp_dirs if t not in roots]
+    for root in walk_roots:
+        if cancel_event is not None and cancel_event.is_set():
+            return total
+        total += _count_in_tree(root, skip_names, protected, cancel_event)
+    return total
+
+
 def _raw_folder_size(path):
     """Total size of a folder tree without the safety skip-list.
 
