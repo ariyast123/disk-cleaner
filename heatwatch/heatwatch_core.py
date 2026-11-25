@@ -339,10 +339,39 @@ def _hardware_temp_groups(node, groups):
         _hardware_temp_groups(child, groups)
 
 
+def _hardware_fan_values(node, values):
+    """Collect fan RPM values from the LHM data.json tree.
+
+    A hardware node is one whose children include a "Fans"
+    category; each sensor's Value reads like "2100 RPM".
+    Values from every hardware node are collected — the
+    caller's max is the "how hard are the fans working"
+    number for the sample.
+    """
+    if not isinstance(node, dict):
+        return
+    children = node.get("Children") or []
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        if str(child.get("Text", "")).strip().lower() == "fans":
+            for sensor in child.get("Children") or []:
+                if isinstance(sensor, dict):
+                    value = _value_float(sensor.get("Value"))
+                    if value is not None:
+                        values.append(value)
+    for child in children:
+        _hardware_fan_values(child, values)
+
+
 def parse_lhm_web_tree(tree):
-    """-> {"cpu": float|None, "gpu": float|None} from a data.json tree."""
+    """-> {"cpu": float|None, "gpu": float|None, "fan": float|None}
+    from a data.json tree. "fan" is the fastest fan RPM LHM
+    exposes, or None when no fan sensor is published."""
     groups = {}
     _hardware_temp_groups(tree, groups)
+    fans = []
+    _hardware_fan_values(tree, fans)
     cpu = gpu = None
     for hardware, sensors in groups.items():
         text = hardware.lower()
@@ -352,7 +381,8 @@ def parse_lhm_web_tree(tree):
         elif any(key in text for key in _CPU_KEYS):
             if cpu is None:
                 cpu = _pick_cpu_temp(sensors)
-    return {"cpu": cpu, "gpu": gpu}
+    return {"cpu": cpu, "gpu": gpu,
+            "fan": max(fans) if fans else None}
 
 
 def fetch_lhm_web(port=8085, timeout=2.0):
@@ -361,8 +391,10 @@ def fetch_lhm_web(port=8085, timeout=2.0):
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             tree = json.loads(resp.read().decode("utf-8", "replace"))
         result = parse_lhm_web_tree(tree)
-        return result if (result["cpu"] is not None
-                          or result["gpu"] is not None) else None
+        if (result["cpu"] is not None or result["gpu"] is not None
+                or result["fan"] is not None):
+            return result
+        return None
     except Exception:
         return None
 
@@ -379,23 +411,30 @@ _WMI_PS = (
 
 
 def parse_wmi_sensors(json_text):
-    """-> {"cpu": ..., "gpu": ...} from the PowerShell JSON output."""
+    """-> {"cpu": ..., "gpu": ..., "fan": ...} from the
+    PowerShell JSON output. "fan" is the fastest Fan-type
+    sensor's RPM, or None when LHM publishes no fan sensor."""
     try:
         data = json.loads(json_text)
     except (TypeError, ValueError):
-        return {"cpu": None, "gpu": None}
+        return {"cpu": None, "gpu": None, "fan": None}
     if isinstance(data, dict):
         data = [data]
     if not isinstance(data, list):
-        return {"cpu": None, "gpu": None}
+        return {"cpu": None, "gpu": None, "fan": None}
     cpu_sensors, gpu_sensors = {}, {}
+    fan_values = []
     for item in data:
         if not isinstance(item, dict):
             continue
-        if str(item.get("SensorType", "")).lower() != "temperature":
-            continue
+        sensor_type = str(item.get("SensorType", "")).lower()
         value = _value_float(item.get("Value"))
         if value is None:
+            continue
+        if sensor_type == "fan":
+            fan_values.append(value)
+            continue
+        if sensor_type != "temperature":
             continue
         name = str(item.get("Name", ""))
         identifier = str(item.get("Identifier", "")).lower()
@@ -406,6 +445,7 @@ def parse_wmi_sensors(json_text):
     return {
         "cpu": _pick_cpu_temp(cpu_sensors) if cpu_sensors else None,
         "gpu": _pick_gpu_temp(gpu_sensors) if gpu_sensors else None,
+        "fan": max(fan_values) if fan_values else None,
     }
 
 
@@ -419,7 +459,9 @@ def fetch_lhm_wmi(timeout=8.0):
                 creationflags=CREATE_NO_WINDOW)
             if out.returncode == 0 and out.stdout.strip():
                 result = parse_wmi_sensors(out.stdout)
-                if result["cpu"] is not None or result["gpu"] is not None:
+                if (result["cpu"] is not None
+                        or result["gpu"] is not None
+                        or result["fan"] is not None):
                     return result
         except Exception:
             continue
@@ -469,7 +511,15 @@ def _reset_source_caches():
 def collect_temps(port=8085, readers=None, now=None):
     """One temperature sample from the best available sources.
 
-    -> {"cpu": float|None, "gpu": float|None, "source": str}
+    -> {"cpu": float|None, "gpu": float|None, "fan": float|None,
+        "source": str}
+
+    "fan" is the fastest fan RPM LibreHardwareMonitor exposes
+    (web feed first, WMI filling in when it runs for the
+    temperatures anyway), or None when no fan sensor is
+    published. The fan reading rides along with the
+    temperature source in use — HeatWatch never spawns the
+    PowerShell probe just for a fan reading.
 
     The WMI route spawns PowerShell — by far the most expensive
     probe. When it comes back empty (LibreHardwareMonitor is not
@@ -485,23 +535,27 @@ def collect_temps(port=8085, readers=None, now=None):
         }
     if now is None:
         now = time.time()
-    cpu = gpu = None
+    cpu = gpu = fan = None
     used = []
     web = readers["web"]()
     if web:
         cpu, gpu = web.get("cpu"), web.get("gpu")
-        if cpu is not None or gpu is not None:
+        fan = web.get("fan")
+        if cpu is not None or gpu is not None or fan is not None:
             used.append("LHM web")
     if cpu is None or gpu is None:
         if now >= _wmi_miss_until[0]:
             wmi = readers["wmi"]()
             if wmi and (wmi.get("cpu") is not None
-                        or wmi.get("gpu") is not None):
+                        or wmi.get("gpu") is not None
+                        or wmi.get("fan") is not None):
                 _wmi_miss_until[0] = 0.0
                 if cpu is None:
                     cpu = wmi.get("cpu")
                 if gpu is None:
                     gpu = wmi.get("gpu")
+                if fan is None:
+                    fan = wmi.get("fan")
                 used.append("LHM WMI")
             else:
                 _wmi_miss_until[0] = now + WMI_MISS_SECONDS
@@ -510,7 +564,7 @@ def collect_temps(port=8085, readers=None, now=None):
         if smi is not None:
             gpu = smi
             used.append("nvidia-smi")
-    return {"cpu": cpu, "gpu": gpu,
+    return {"cpu": cpu, "gpu": gpu, "fan": fan,
             "source": " + ".join(used) if used else "none"}
 
 
@@ -544,6 +598,8 @@ class SessionTracker:
             "series": [],
             "peak_cpu": None,
             "peak_gpu": None,
+            "fan_low": None,
+            "fan_peak": None,
             "sec_above_cpu": 0.0,
             "sec_above_gpu": 0.0,
             "warn_cpu": self.warn_cpu,
@@ -557,6 +613,12 @@ class SessionTracker:
         record["end"] = ts
         record["duration_s"] = round(ts - record["start"], 1)
         record["sources"] = sorted(record["sources"])
+        # Fan range as whole RPM — a missing fan sensor stays
+        # None, never a guess.
+        if record["fan_peak"] is not None:
+            record["fan_peak"] = int(round(record["fan_peak"]))
+        if record["fan_low"] is not None:
+            record["fan_low"] = int(round(record["fan_low"]))
         # JSON-safe copy: [elapsed_s, cpu, gpu] per tick, None kept
         # as None — a missing reading is a gap, never a guess.
         record["series"] = [list(point) for point in record["series"]]
@@ -566,9 +628,17 @@ class SessionTracker:
         self._gone_since = None
         return record
 
-    def update(self, ts, running_games, cpu, gpu, source=""):
+    def update(self, ts, running_games, cpu, gpu, source="",
+               fan=None):
         """Feed one tick; returns a list of events:
-        ("started", game) / ("ended", record)."""
+        ("started", game) / ("ended", record).
+
+        `fan` is the fastest fan RPM this tick (None when no
+        fan sensor is published); the session keeps the low
+        and peak so the fan range is visible next to the
+        temperatures. A tick without a fan reading leaves the
+        range untouched — it never resets it or fills it in.
+        """
         events = []
         games = list(running_games or [])
         if self.session is None:
@@ -600,6 +670,11 @@ class SessionTracker:
                                    else max(session["peak_gpu"], gpu))
             if gpu >= self.warn_gpu:
                 session["sec_above_gpu"] += dt
+        if fan is not None:
+            session["fan_peak"] = (fan if session["fan_peak"] is None
+                                   else max(session["fan_peak"], fan))
+            session["fan_low"] = (fan if session["fan_low"] is None
+                                  else min(session["fan_low"], fan))
         if games:
             self._gone_since = None
         else:
@@ -708,6 +783,28 @@ def chart_points(samples, width=640, height=280, warn_cpu=95,
             "warn_gpu_y": (y_of(warn_gpu) if warn_gpu is not None
                            else None),
             "grid": grid, "t_max": t_max, "y_max": y_max}
+
+
+def format_fan_range(low, peak):
+    """One line for a session's fan range: "1500–3200 RPM", a
+    lone "2100 RPM" when the range never moved (or only a peak
+    was ever seen), or "—" when the session had no fan sensor.
+    A missing low end is never invented."""
+    if peak is None:
+        return "—"
+    try:
+        peak = float(peak)
+    except (TypeError, ValueError):
+        return "—"
+    if low is None:
+        return f"{peak:.0f} RPM"
+    try:
+        low = float(low)
+    except (TypeError, ValueError):
+        return f"{peak:.0f} RPM"
+    if low >= peak:
+        return f"{peak:.0f} RPM"
+    return f"{low:.0f}–{peak:.0f} RPM"
 
 
 # ---------------------------------------------------------------------------
