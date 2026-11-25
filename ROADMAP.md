@@ -71,9 +71,18 @@ confirmation, no admin requirement, UI text in English.
    scan counter, skip-list in both modes, cache targets, temp
    dedup, protected dirs, cancel, GUI bar behaviour, end-to-end
    scan); full suite green.
-6. **Biggest-folders view** — a simple visual breakdown (top folders
-   by size) on the System tab or its own tab, so he sees where space
-   goes before scanning.
+6. **Biggest-folders view** — DONE (Nov 24, 2026, v1.2.8). A new
+   "Biggest folders" tab ranks the top 10 subfolders of the folders
+   he scans (`cleaner_core.top_folders()`: one walk per root, same
+   skip-list and protected-area pruning as the scanner, symlinks
+   never followed, files directly in a root not attributed), each
+   with a size bar relative to the largest, a file count, and an
+   Open button that opens the folder in Explorer. Report-only:
+   sizes are measured, nothing is deleted from the view. Covered
+   by new tests in round 4 (section 15) and round 5 (section 13);
+   full suite green. (Also fixed round 5's stale helper assertion:
+   the helper is handed to Explorer since v1.2.6, with cmd /c only
+   as a fallback; the test now checks both.)
 7. **Remember settings + window size** between runs (small JSON in
    ~/DiskCleaner), including scan locations and thresholds.
 8. **Export a scan report** (txt/html) he can keep or share.
