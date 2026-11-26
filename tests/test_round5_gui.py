@@ -16,6 +16,9 @@ gui.own_folders = lambda: [os.path.join(HERE, "fake_app_home")]
 BASE = os.path.join(HERE, "fixtures5")
 os.system(f"rm -rf {BASE}")
 os.makedirs(BASE, exist_ok=True)
+# Settings are saved on scan start and on close: keep them inside the
+# fixtures so the tests never touch the real ~/DiskCleaner/settings.json.
+gui.settings_path = lambda: os.path.join(BASE, "settings.json")
 fails = []
 
 
@@ -449,57 +452,233 @@ if len(popen_calls3) != 2 or popen_calls3[0][0] != ["explorer.exe", helper_path]
         or popen_calls3[1][0] != ["cmd", "/c", helper_path]:
     fails.append(f"_write_update_helper: Explorer failure should fall back to cmd /c: {popen_calls3}")
 
-# --- 13) Biggest folders tab: ranked rows, open, empty roots -------------
+# --- 13) Biggest folders tab: filled by a scan, open, clear --------------
+# NOTE (v1.2.9): v1.2.8 fills this tab from the scan itself (the breakdown
+# runs in a parallel thread during the scan); the tests shipped with
+# v1.2.8 still called the older _find_biggest_folders() button API, so
+# they failed against their own sources. This section tests the
+# published behaviour, plus the v1.2.9 fix: the Open button used to call
+# _open_folder(), which opens the folder's PARENT - it now opens the
+# folder itself via _open_directory().
 BIG = os.path.join(BASE, "bigfold")
-os.makedirs(os.path.join(BIG, "games"), exist_ok=True)
-os.makedirs(os.path.join(BIG, "photos"), exist_ok=True)
-with open(os.path.join(BIG, "games", "g.bin"), "wb") as fh:
+GAMES = os.path.join(BIG, "games")
+PHOTOS = os.path.join(BIG, "photos")
+os.makedirs(GAMES, exist_ok=True)
+os.makedirs(PHOTOS, exist_ok=True)
+with open(os.path.join(GAMES, "g.bin"), "wb") as fh:
     fh.truncate(3 * 1024 * 1024)
-with open(os.path.join(BIG, "photos", "p.bin"), "wb") as fh:
+with open(os.path.join(PHOTOS, "p.bin"), "wb") as fh:
     fh.truncate(1024 * 1024)
-app.custom_folders = [BIG]
-app._find_biggest_folders()
-if not wait_until(app, lambda: not app.biggest_running and app.biggest_entries, timeout=20):
-    fails.append("biggest: run did not finish")
+
+
+def _big_cards():
+    return [w for w in app.folders_frame.winfo_children()
+            if isinstance(w, gui.ctk.CTkFrame)]
+
+
+def _walk_widgets(widget):
+    yield widget
+    for child in widget.winfo_children():
+        yield from _walk_widgets(child)
+
+
+def _card_texts(card):
+    return [w.cget("text") for w in _walk_widgets(card)
+            if isinstance(w, gui.ctk.CTkLabel)]
+
+
+def _card_button(card):
+    for w in card.winfo_children():
+        if isinstance(w, gui.ctk.CTkButton):
+            return w
+    return None
+
+
+def _card_bar(card):
+    for w in _walk_widgets(card):
+        if isinstance(w, gui.ctk.CTkProgressBar):
+            return w
+    return None
+
+
+def _frame_texts():
+    return [w.cget("text") for w in _walk_widgets(app.folders_frame)
+            if isinstance(w, gui.ctk.CTkLabel)]
+
+
+# Empty state after Clear scan.
+app._clear_scan()
+app.update()
+if _big_cards():
+    fails.append("biggest: Clear scan should leave no cards")
+if not any("No folders scanned yet" in t for t in _frame_texts()):
+    fails.append(f"biggest: empty state wrong: {_frame_texts()}")
+if app.top_folders != []:
+    fails.append("biggest: Clear scan should reset top_folders")
+
+# Rendered rows: sizes, file counts, bars scaled to the largest.
+app._scan_roots = [BIG]
+app._scan_done([], [], folders=[(GAMES, 3 * 1024 * 1024, 2),
+                                (PHOTOS, 1024 * 1024, 1)])
+app.update()
+if app.top_folders != [(GAMES, 3 * 1024 * 1024, 2),
+                       (PHOTOS, 1024 * 1024, 1)]:
+    fails.append(f"biggest: _scan_done should store the folders: {app.top_folders}")
+cards = _big_cards()
+if len(cards) != 2:
+    fails.append(f"biggest: expected 2 cards, got {len(cards)}")
 else:
-    paths = [os.path.basename(e.path) for e in app.biggest_entries]
-    if paths != ["games", "photos"]:
-        fails.append(f"biggest: expected [games, photos], got {paths}")
-    if len(app.biggest_frame.winfo_children()) != 2:
-        fails.append(f"biggest: expected 2 cards, got {len(app.biggest_frame.winfo_children())}")
-    if "Top 2 folders" not in app.biggest_status.cget("text"):
-        fails.append(f"biggest: status wrong: {app.biggest_status.cget('text')}")
-    if str(app.biggest_btn.cget("state")) != "normal":
-        fails.append("biggest: button not re-enabled after the run")
+    t0 = " ".join(_card_texts(cards[0]))
+    t1 = " ".join(_card_texts(cards[1]))
+    if "games" not in t0 or "3.0 MB" not in t0 or "2 files" not in t0:
+        fails.append(f"biggest: games card wrong: {t0!r}")
+    if "photos" not in t1 or "1.0 MB" not in t1 or "1 file" not in t1:
+        fails.append(f"biggest: photos card wrong: {t1!r}")
+    bar0, bar1 = _card_bar(cards[0]), _card_bar(cards[1])
+    if bar0 is None or bar1 is None:
+        fails.append("biggest: cards should each have a size bar")
+    elif abs(bar0.get() - 1.0) > 0.01 or abs(bar1.get() - 1 / 3) > 0.01:
+        fails.append(f"biggest: bars should be 1.0 and 0.33, got {bar0.get()}, {bar1.get()}")
+    if _card_button(cards[0]) is None or _card_button(cards[1]) is None:
+        fails.append("biggest: cards should each have an Open button")
     # Open opens the folder itself (not its parent).
     opened = []
     had_startfile = hasattr(os, "startfile")
     real_startfile = getattr(os, "startfile", None)
     os.startfile = lambda p: opened.append(p)
     try:
-        gui.DiskCleanerApp._open_directory(os.path.join(BIG, "games"))
-        if opened != [os.path.join(BIG, "games")]:
-            fails.append(f"biggest open: got {opened}")
+        _card_button(cards[0]).invoke()
+        if opened != [GAMES]:
+            fails.append(f"biggest open: expected [{GAMES}], got {opened}")
     finally:
         if had_startfile:
             os.startfile = real_startfile
         else:
             del os.startfile
-# No roots -> info dialog, no run started.
+# A row for a scan root is labelled as files directly in that folder.
+app._scan_done([], [], folders=[(BIG, 9 * 1024 * 1024, 1),
+                                (GAMES, 3 * 1024 * 1024, 2)])
+app.update()
+cards = _big_cards()
+if len(cards) != 2 or "(files directly in this folder)" not in " ".join(_card_texts(cards[0])):
+    fails.append(f"biggest: root row should be labelled: {[ _card_texts(c) for c in cards]}")
+
+# End to end: a real scan fills the tab from its parallel walk.
 for var in app.folder_vars.values():
     var.set(False)
-app.custom_folders = []
-infos = []
-real_info = gui.messagebox.showinfo
-gui.messagebox.showinfo = lambda *a, **k: infos.append(a)
-try:
-    app._find_biggest_folders()
-finally:
-    gui.messagebox.showinfo = real_info
-if not infos or "Nothing to scan" not in str(infos[0]):
-    fails.append(f"biggest: empty roots should show the info dialog, got {infos}")
-if app.biggest_running:
-    fails.append("biggest: run must not start with no roots")
+app.custom_folders = [BIG]
+app.caches_var.set(False)
+app.hogs_var.set(False)
+app.dup_var.set(False)
+app._start_scan()
+if not wait_until(app, lambda: not app.scanning, timeout=20):
+    fails.append("biggest: real scan did not finish")
+else:
+    paths = [os.path.basename(p) for p, _s, _c in app.top_folders]
+    if paths != ["games", "photos"]:
+        fails.append(f"biggest: scan should fill [games, photos], got {paths}")
+    if len(_big_cards()) != 2:
+        fails.append(f"biggest: scan should render 2 cards, got {len(_big_cards())}")
+app._clear_scan()
+app.update()
+if app.top_folders != [] or _big_cards():
+    fails.append("biggest: Clear scan after a real scan should empty the tab")
 
-app.destroy()
+# --- 14) Remember settings + window size ---------------------------------
+# Pure helpers first: save/load round-trip, corrupt file, bad values.
+SET_PATH = os.path.join(BASE, "settings_case.json")
+custom = {
+    "window": {"width": 1400, "height": 900},
+    "folders": {"Downloads": False, "Desktop": True, "Documents": True,
+                "Pictures": True, "Music": False, "Videos": False},
+    "custom_folders": [BIG],
+    "large_mb": 250, "old_days": 90, "installer_days": 7,
+    "caches": False, "duplicates": True, "hogs": False, "full_scan": True,
+    "surprise_key": "dropped",
+}
+if not gui.save_settings(custom, path=SET_PATH):
+    fails.append("settings: save_settings should return True")
+loaded = gui.load_settings(path=SET_PATH)
+if loaded != gui.sanitize_settings(custom):
+    fails.append(f"settings: round-trip mismatch: {loaded}")
+if "surprise_key" in loaded:
+    fails.append("settings: unknown keys should be dropped")
+if gui.load_settings(path=os.path.join(BASE, "nope.json")) != gui.default_settings():
+    fails.append("settings: missing file should load defaults")
+with open(os.path.join(BASE, "broken.json"), "w") as fh:
+    fh.write("{not json")
+if gui.load_settings(path=os.path.join(BASE, "broken.json")) != gui.default_settings():
+    fails.append("settings: corrupt file should load defaults")
+# Bad values clamp or fall back; nonexistent custom folders are dropped.
+bad = {
+    "window": {"width": 50, "height": "huge"},
+    "folders": {"Downloads": "yes", "Desktop": True},
+    "custom_folders": [BIG, os.path.join(BASE, "does_not_exist"), 42, ""],
+    "large_mb": -5, "old_days": 99999, "installer_days": "abc",
+    "caches": "yes", "duplicates": True,
+}
+sane = gui.sanitize_settings(bad)
+if sane["window"] != {"width": 1020, "height": 800}:
+    fails.append(f"settings: window should clamp/fall back: {sane['window']}")
+if sane["folders"]["Downloads"] is not True or sane["folders"]["Desktop"] is not True:
+    fails.append(f"settings: folder flags wrong: {sane['folders']}")
+if sane["custom_folders"] != [BIG]:
+    fails.append(f"settings: bad custom folders should be dropped: {sane['custom_folders']}")
+if (sane["large_mb"], sane["old_days"], sane["installer_days"]) != (1, 3650, 30):
+    fails.append(f"settings: thresholds wrong: {sane['large_mb']}, {sane['old_days']}, {sane['installer_days']}")
+if sane["caches"] is not True or sane["duplicates"] is not True:
+    fails.append(f"settings: toggles wrong: {sane['caches']}, {sane['duplicates']}")
+if gui.sanitize_settings("not a dict") != gui.default_settings():
+    fails.append("settings: non-dict input should give defaults")
+if gui.sanitize_settings(None) != gui.default_settings():
+    fails.append("settings: None input should give defaults")
+
+# GUI: apply + collect round-trip on the live app.
+app._apply_settings(custom)
+app.update()
+if app.folder_vars["Downloads"].get() is not False or app.folder_vars["Desktop"].get() is not True:
+    fails.append("settings: _apply_settings should set the folder ticks")
+if app.large_mb.get() != "250" or app.old_days.get() != "90" or app.installer_days.get() != "7":
+    fails.append(f"settings: thresholds not applied: {app.large_mb.get()}, {app.old_days.get()}, {app.installer_days.get()}")
+if app.caches_var.get() is not False or app.dup_var.get() is not True or app.full_var.get() is not True:
+    fails.append("settings: toggles not applied")
+if app.custom_folders != [BIG]:
+    fails.append(f"settings: custom folders not applied: {app.custom_folders}")
+if app.winfo_width() != 1400 or app.winfo_height() != 900:
+    fails.append(f"settings: window size not applied: {app.winfo_width()}x{app.winfo_height()}")
+collected = app._collect_settings()
+if collected["folders"] != custom["folders"] or collected["large_mb"] != 250 or collected["custom_folders"] != [BIG]:
+    fails.append(f"settings: _collect_settings mismatch: {collected}")
+if collected["window"] != {"width": 1400, "height": 900}:
+    fails.append(f"settings: collected window wrong: {collected['window']}")
+
+# A scan start saves the current settings, so a crash or the update
+# helper's taskkill does not lose them.
+app.large_mb.delete(0, "end")
+app.large_mb.insert(0, "777")
+for var in app.folder_vars.values():
+    var.set(False)
+app.custom_folders = [BIG]
+app.caches_var.set(False)
+app.hogs_var.set(False)
+app.dup_var.set(False)
+# _apply_settings above turned full scan on; a full scan asks for
+# confirmation in a modal dialog, which would block this test forever.
+app.full_var.set(False)
+app._start_scan()
+if not wait_until(app, lambda: not app.scanning, timeout=20):
+    fails.append("settings: scan for the save check did not finish")
+else:
+    saved = gui.load_settings()  # settings_path is patched to BASE
+    if saved["large_mb"] != 777 or saved["custom_folders"] != [BIG]:
+        fails.append(f"settings: scan start should save settings: {saved}")
+
+# Closing saves too - this is the last thing: _on_close destroys the app.
+app.old_days.delete(0, "end")
+app.old_days.insert(0, "42")
+app._on_close()
+saved = gui.load_settings()
+if saved["old_days"] != 42:
+    fails.append(f"settings: close should save settings: {saved}")
+
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
