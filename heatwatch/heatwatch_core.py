@@ -841,11 +841,19 @@ def _median(values):
     return (ordered[mid - 1] + ordered[mid]) / 2.0
 
 
-def verdict(history, min_duration_s=600, window=5):
+def verdict(history, min_duration_s=600, window=5, warn_cpu=95):
     """Judge the cooling from recent full-length game sessions.
 
     -> {"level": "unknown"|"healthy"|"hot"|"repaste",
-        "median_peak_cpu": float|None, "sessions_used": int}
+        "median_peak_cpu": float|None, "sessions_used": int,
+        "warn_cpu": float}
+
+    The levels follow the user's CPU warning line (Settings)
+    instead of a fixed number: "hot" when the median peak
+    reaches the line, "repaste" when it sits 3°C past it. The
+    default warn_cpu=95 keeps the old fixed 95/98°C split.
+    The line only moves the bar — the verdict still judges
+    real peaks from full sessions only, never guesses.
     """
     full = [s for s in history
             if isinstance(s, dict)
@@ -854,16 +862,16 @@ def verdict(history, min_duration_s=600, window=5):
     recent = full[-window:]
     if not recent:
         return {"level": "unknown", "median_peak_cpu": None,
-                "sessions_used": 0}
+                "sessions_used": 0, "warn_cpu": warn_cpu}
     median_peak = _median([s["peak_cpu"] for s in recent])
-    if median_peak >= 98:
+    if median_peak >= warn_cpu + 3:
         level = "repaste"
-    elif median_peak >= 95:
+    elif median_peak >= warn_cpu:
         level = "hot"
     else:
         level = "healthy"
     return {"level": level, "median_peak_cpu": median_peak,
-            "sessions_used": len(recent)}
+            "sessions_used": len(recent), "warn_cpu": warn_cpu}
 
 
 # ---------------------------------------------------------------------------
