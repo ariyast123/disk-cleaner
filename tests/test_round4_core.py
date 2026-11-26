@@ -444,6 +444,11 @@ if (moved, failed, processed) != (5, [], 5):
     fails.append(f"recycle: chunked run expected (5, [], 5), got {(moved, failed, processed)}")
 
 # --- 15) top_folders: biggest subfolders, ranked, with guards ------------
+# NOTE (v1.2.9): the published v1.2.8 sources return (path, size, count)
+# tuples and bucket files sitting directly in a root into a row for the
+# root itself; the tests shipped with v1.2.8 still expected the older
+# FolderSize objects and no root row, so they failed against their own
+# sources. This section tests the published behaviour.
 BF = f"{BASE}/bigfold"
 make(f"{BF}/games/huge.dat", 5 * 1024 * 1024, 10)
 make(f"{BF}/games/small.txt", 100, 10)
@@ -451,29 +456,31 @@ make(f"{BF}/games/sub/nested.bin", 1024 * 1024, 10)  # counts toward games
 make(f"{BF}/photos/pic1.bin", 2 * 1024 * 1024, 10)
 make(f"{BF}/photos/pic2.bin", 1024 * 1024, 10)
 make(f"{BF}/docs/note.txt", 500, 10)
-make(f"{BF}/loose.bin", 9 * 1024 * 1024, 10)  # directly in root: not attributed
+make(f"{BF}/loose.bin", 9 * 1024 * 1024, 10)  # directly in root: root row
 os.makedirs(f"{BF}/truly_empty", exist_ok=True)
 make(f"{BF}/node_modules/pkg/lib.bin", 8 * 1024 * 1024, 10)  # skipped dir
 make(f"{BF}/Package Cache/setup.exe", 4 * 1024 * 1024, 10)  # protected name
 top = core.top_folders([BF])
-names = [os.path.basename(t.path) for t in top]
-if names != ["games", "photos", "docs"]:
-    fails.append(f"top_folders: expected [games, photos, docs], got {names}")
+if not all(isinstance(t, tuple) and len(t) == 3 for t in top):
+    fails.append(f"top_folders: expected (path, size, count) tuples, got {top!r}")
+names = [os.path.basename(p) for p, _s, _c in top]
+if names != ["bigfold", "games", "photos", "docs"]:
+    fails.append(f"top_folders: expected [bigfold, games, photos, docs], got {names}")
 else:
-    if top[0].size != 5 * 1024 * 1024 + 100 + 1024 * 1024:
-        fails.append(f"top_folders: games size wrong: {top[0].size}")
-    if top[0].file_count != 3:
-        fails.append(f"top_folders: games should count 3 files, got {top[0].file_count}")
-    if top[1].size != 3 * 1024 * 1024 or top[2].size != 500:
-        fails.append(f"top_folders: photos/docs sizes wrong: {[t.size for t in top]}")
-if any(t.path == BF for t in top):
-    fails.append("top_folders: files directly in the root must not form an entry")
+    if top[0][1] != 9 * 1024 * 1024 or top[0][2] != 1 or top[0][0] != BF:
+        fails.append(f"top_folders: root row wrong: {top[0]}")
+    if top[1][1] != 5 * 1024 * 1024 + 100 + 1024 * 1024:
+        fails.append(f"top_folders: games size wrong: {top[1][1]}")
+    if top[1][2] != 3:
+        fails.append(f"top_folders: games should count 3 files, got {top[1][2]}")
+    if top[2][1] != 3 * 1024 * 1024 or top[3][1] != 500:
+        fails.append(f"top_folders: photos/docs sizes wrong: {[t[1] for t in top]}")
 if any(n in names for n in ("truly_empty", "node_modules", "Package Cache")):
     fails.append(f"top_folders: empty/skipped/protected folders leaked in: {names}")
-if [os.path.basename(t.path) for t in core.top_folders([BF], limit=2)] != ["games", "photos"]:
+if [os.path.basename(p) for p, _s, _c in core.top_folders([BF], limit=2)] != ["bigfold", "games"]:
     fails.append("top_folders: limit=2 should keep only the top two")
-if [os.path.basename(t.path) for t in core.top_folders(
-        [BF], extra_protected=[f"{BF}/photos"])] != ["games", "docs"]:
+if [os.path.basename(p) for p, _s, _c in core.top_folders(
+        [BF], extra_protected=[f"{BF}/photos"])] != ["bigfold", "games", "docs"]:
     fails.append("top_folders: extra_protected folder should be excluded")
 if core.top_folders([]) != []:
     fails.append("top_folders: empty roots should return []")
@@ -483,13 +490,33 @@ ev = threading.Event()
 ev.set()
 if core.top_folders([BF], cancel_event=ev) != []:
     fails.append("top_folders: pre-set cancel should return []")
+# temp_dirs are walked too, with the same bucketing.
+TDIR = f"{BASE}/tempdir"
+make(f"{TDIR}/cache1/blob.bin", 4 * 1024 * 1024, 10)
+make(f"{TDIR}/loose.tmp", 1024 * 1024, 10)
+top_t = core.top_folders([BF], temp_dirs=[TDIR])
+by_name_t = {os.path.basename(p): (s, c) for p, s, c in top_t}
+if by_name_t.get("cache1") != (4 * 1024 * 1024, 1):
+    fails.append(f"top_folders: temp_dirs subfolder wrong: {by_name_t.get('cache1')}")
+if by_name_t.get("tempdir") != (1024 * 1024, 1):
+    fails.append(f"top_folders: temp_dirs root row wrong: {by_name_t.get('tempdir')}")
+# A temp dir that is also a root must not double-count.
+if core.top_folders([BF], temp_dirs=[BF]) != top:
+    fails.append("top_folders: temp dir equalling a root double-counted")
+# Overlapping roots: the same file is counted once.
+top_o = core.top_folders([BF, f"{BF}/games"])
+by_name_o = {os.path.basename(p): (s, c) for p, s, c in top_o}
+if by_name_o.get("games") != (5 * 1024 * 1024 + 100 + 1024 * 1024, 3):
+    fails.append(f"top_folders: overlapping roots double-counted games: {by_name_o.get('games')}")
+if by_name_o.get("bigfold") != (9 * 1024 * 1024, 1):
+    fails.append(f"top_folders: overlapping roots changed the root row: {by_name_o.get('bigfold')}")
 # Symlinked folder must not be followed or counted.
 os.makedirs(f"{BF}/real_target", exist_ok=True)
 make(f"{BF}/real_target/big.bin", 7 * 1024 * 1024, 10)
 os.symlink(f"{BF}/real_target", f"{BF}/link_dir")
 top2 = core.top_folders([BF])
-names2 = [os.path.basename(t.path) for t in top2]
-if names2[0] != "real_target" or "link_dir" in names2:
+names2 = [os.path.basename(p) for p, _s, _c in top2]
+if names2[1] != "real_target" or "link_dir" in names2:
     fails.append(f"top_folders: symlink must not be followed/counted: {names2}")
 
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
