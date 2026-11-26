@@ -57,3 +57,10 @@ worst bug this app can ship.
    by test round 25 (fake winreg: versioned InstallLocation,
    flat folder, DisplayIcon/UninstallString derivation,
    non-Proton entries ignored, broken registry degrades to None).
+8. **Gateway ping retry — DONE in v1.4.3.** `ping_host` retries
+   once before calling the gateway unreachable, so a single
+   dropped ICMP echo no longer flips the app to "blocked" for a
+   poll tick (false kill-switch warning + spurious blocked_midway
+   event). A gateway that answers first try is still pinged
+   exactly once; a ping that cannot run stays "unknown" and is
+   not retried. Covered by test round 26.
