@@ -282,6 +282,47 @@ def _value_float(text):
     return None
 
 
+# A sensor that reports a physically impossible value is a
+# broken sensor, not a hot laptop: LHM sometimes publishes
+# 255 °C (or -55 °C) for a missing probe, and a stray fan RPM
+# in the hundreds of thousands. Such values are dropped at
+# the parse step, so they read as "no reading" — never as a
+# peak, a verdict input, or a warning — and the fallback
+# sources still get their chance, because a dropped value is
+# a missing value. The bounds are generous on purpose: a
+# laptop CPU never legitimately reads past 130 °C, and no
+# laptop fan spins past 100k RPM.
+TEMP_MIN_C = -40.0
+TEMP_MAX_C = 130.0
+FAN_MAX_RPM = 100000.0
+
+
+def _sane_temp(value):
+    """A plausible temperature, or None when it cannot be one."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if TEMP_MIN_C <= number <= TEMP_MAX_C:
+        return number
+    return None
+
+
+def _sane_fan(value):
+    """A plausible fan speed, or None when it cannot be one."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if 0.0 <= number <= FAN_MAX_RPM:
+        return number
+    return None
+
+
 def _pick_cpu_temp(sensors):
     """sensors: {name: value}. Prefer the package reading."""
     for name, value in sensors.items():
@@ -325,11 +366,11 @@ def _hardware_temp_groups(node, groups):
             is_hardware = True
             for sensor in child.get("Children") or []:
                 if isinstance(sensor, dict):
-                    value = _value_float(sensor.get("Value"))
+                    value = _sane_temp(_value_float(sensor.get("Value")))
                     if value is not None:
                         temps[str(sensor.get("Text", ""))] = value
         elif "Value" in child and child.get("Children") in (None, []):
-            value = _value_float(child.get("Value"))
+            value = _sane_temp(_value_float(child.get("Value")))
             if value is not None and "°c" in str(child.get("Value", "")):
                 temps[str(child.get("Text", ""))] = value
                 is_hardware = True
@@ -357,7 +398,7 @@ def _hardware_fan_values(node, values):
         if str(child.get("Text", "")).strip().lower() == "fans":
             for sensor in child.get("Children") or []:
                 if isinstance(sensor, dict):
-                    value = _value_float(sensor.get("Value"))
+                    value = _sane_fan(_value_float(sensor.get("Value")))
                     if value is not None:
                         values.append(value)
     for child in children:
@@ -428,13 +469,18 @@ def parse_wmi_sensors(json_text):
         if not isinstance(item, dict):
             continue
         sensor_type = str(item.get("SensorType", "")).lower()
-        value = _value_float(item.get("Value"))
-        if value is None:
+        raw = _value_float(item.get("Value"))
+        if raw is None:
             continue
         if sensor_type == "fan":
-            fan_values.append(value)
+            fan = _sane_fan(raw)
+            if fan is not None:
+                fan_values.append(fan)
             continue
         if sensor_type != "temperature":
+            continue
+        value = _sane_temp(raw)
+        if value is None:
             continue
         name = str(item.get("Name", ""))
         identifier = str(item.get("Identifier", "")).lower()
@@ -478,7 +524,7 @@ def parse_nvidia_smi(text):
     for line in str(text).splitlines():
         value = _value_float(line.strip())
         if value is not None:
-            return value
+            return _sane_temp(value)
     return None
 
 
