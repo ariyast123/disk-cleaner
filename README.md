@@ -31,7 +31,11 @@ with zebra rows. A filter box narrows results by name/path, and
 Safe junk / All / None buttons manage ticks — your selection is kept
 even while filtering. Double-click a file to open it with its default
 app; right-click a file for "Show in Explorer" (opens Explorer with
-that exact file highlighted) or "Open containing folder". Folders you
+that exact file highlighted) or "Open containing folder". The
+"Biggest folders" tab lists the largest folders inside the folders
+you scanned, biggest first, with size, file count and a bar against
+the largest folder, plus an Open button per folder — it only shows
+where space goes and never deletes anything. Folders you
 add under "Also scanning" each get a ✕ button to remove them, and
 "Clear scan" throws away the current results so you can rescan with
 different settings. After an update, the next launch shows a small
