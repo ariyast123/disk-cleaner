@@ -71,18 +71,21 @@ confirmation, no admin requirement, UI text in English.
    scan counter, skip-list in both modes, cache targets, temp
    dedup, protected dirs, cancel, GUI bar behaviour, end-to-end
    scan); full suite green.
-6. **Biggest-folders view** — DONE (Nov 24, 2026, v1.2.8). A new
-   "Biggest folders" tab ranks the top 10 subfolders of the folders
-   he scans (`cleaner_core.top_folders()`: one walk per root, same
-   skip-list and protected-area pruning as the scanner, symlinks
-   never followed, files directly in a root not attributed), each
-   with a size bar relative to the largest, a file count, and an
-   Open button that opens the folder in Explorer. Report-only:
-   sizes are measured, nothing is deleted from the view. Covered
-   by new tests in round 4 (section 15) and round 5 (section 13);
-   full suite green. (Also fixed round 5's stale helper assertion:
-   the helper is handed to Explorer since v1.2.6, with cmd /c only
-   as a fallback; the test now checks both.)
+6. **Biggest-folders view — DONE (Nov 25, 2026, v1.2.8).** A new
+   "Biggest folders" tab next to "Files to clean" and "System space"
+   lists the largest folders inside the scanned roots after a scan,
+   biggest first, each with its size, file count and a bar scaled to
+   the largest folder, plus an Open button per folder. Sizes count
+   every file in each folder, not just junk candidates
+   (`cleaner_core.top_folders()`: same walk roots, skip-list and
+   never-delete pruning as scan(), files counted once even when roots
+   overlap; files directly in a root are shown as a row for that
+   root). The tab is read-only - nothing can be deleted from it. The
+   breakdown runs in a parallel thread during the scan, so the scan
+   itself takes no longer. Covered by new test round 9 (core
+   aggregation, skip-list in both modes, overlap dedup, protected
+   dirs, cancel, GUI render + bars + Open button, end-to-end scan,
+   Clear scan); full suite green.
 7. **Remember settings + window size** between runs (small JSON in
    ~/DiskCleaner), including scan locations and thresholds.
 8. **Export a scan report** (txt/html) he can keep or share.
