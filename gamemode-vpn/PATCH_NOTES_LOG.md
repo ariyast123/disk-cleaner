@@ -305,3 +305,20 @@ pyflakes clean.
   DisplayIcon/UninstallString derivation, non-Proton entries
   ignored, broken registry degrades to None, precedence kept).
   All 25 rounds pass, pyflakes clean.
+
+## 2026-11-25 — v1.4.3
+
+- Gateway ping retry (detection robustness): one dropped echo from
+  the LAN gateway no longer flips the app to "blocked" for a poll
+  tick — no more false kill-switch warning and no spurious
+  blocked_midway event from a single lost packet. `ping_host` now
+  retries once before calling the gateway unreachable; a gateway
+  that answers on the first try is still pinged exactly once, and
+  a ping that cannot run at all still reports unknown, never a
+  guess, and is not retried. Covered by new test round 26 (retry
+  after one lost echo, two lost echoes unreachable, no retry on a
+  first answer, attempts=1 old behavior, missing binary stays
+  unknown, snapshot stays bare on a flaky gateway). All 26 rounds
+  pass, pyflakes clean. (Also fixed in this release: round 14's
+  version pin was still asserting 1.4.1 from the phone side's
+  v1.4.2 publish — it now pins the current version.)
