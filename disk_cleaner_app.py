@@ -314,6 +314,8 @@ class DiskCleanerApp(ctk.CTk):
         self.cleaning = False
         self._scan_total = 0  # file count from the pre-scan counting pass (0 = unknown)
         self.results = []            # list[core.FoundFile] from the last scan
+        self.top_folders = []        # list[(path, size, count)] from the last scan
+        self._scan_roots = []        # roots (+ temp dirs) the last scan walked
         self.file_iids = {}          # tree iid -> FoundFile (current view)
         self.checked_paths = set()   # paths the user has ticked
         self.cat_iids = {}           # category -> parent iid (current view)
@@ -321,8 +323,6 @@ class DiskCleanerApp(ctk.CTk):
         self._filter_after = None
         self.update_info = None
         self._whats_new_window = None
-        self.biggest_running = False
-        self.biggest_entries = []  # list[core.FolderSize] from the last run
 
         self._build_sidebar()
         self._build_main()
@@ -364,7 +364,8 @@ class DiskCleanerApp(ctk.CTk):
                         self.progress.set(pct)
                     self.status.configure(text=text)
                 elif kind == "scan_done":
-                    self._scan_done(msg[1], msg[2])
+                    self._scan_done(msg[1], msg[2],
+                                    msg[3] if len(msg) > 3 else None)
                 elif kind == "clean_progress":
                     self.status.configure(
                         text=f"Cleaning... {msg[1]} of {msg[2]} files processed"
@@ -375,8 +376,6 @@ class DiskCleanerApp(ctk.CTk):
                     self._show_update_banner(msg[1])
                 elif kind == "update_downloaded":
                     self._update_downloaded(msg[1])
-                elif kind == "biggest_done":
-                    self._show_biggest(msg[1])
         except queue.Empty:
             pass
         self.after(100, self._poll_queue)
@@ -849,32 +848,11 @@ class DiskCleanerApp(ctk.CTk):
         )
         self.hogs_frame.pack(fill="both", expand=True)
 
-        # Biggest-folders tab: which subfolders use the most space, so
-        # he sees where it goes before scanning for individual files.
-        top = ctk.CTkFrame(folders_tab, fg_color="transparent")
-        top.pack(fill="x", pady=(2, 4))
-        ctk.CTkLabel(
-            top,
-            text="Top folders by size in the folders you scan.",
-            text_color=C["muted"], font=ctk.CTkFont(size=12),
-        ).pack(side="left", padx=6)
-        self.biggest_btn = ctk.CTkButton(
-            top, text="Find biggest folders", width=170, height=32,
-            corner_radius=8, fg_color=C["accent"],
-            hover_color=C["accent_hover"],
-            command=self._find_biggest_folders,
+        self.folders_frame = ctk.CTkScrollableFrame(
+            folders_tab, fg_color=C["bg"], scrollbar_button_color=C["panel2"]
         )
-        self.biggest_btn.pack(side="right", padx=6)
-        self.biggest_status = ctk.CTkLabel(
-            folders_tab, text="", text_color=C["muted"],
-            font=ctk.CTkFont(size=12), wraplength=800, justify="left",
-        )
-        self.biggest_status.pack(anchor="w", padx=6, pady=(0, 4))
-        self.biggest_frame = ctk.CTkScrollableFrame(
-            folders_tab, fg_color=C["bg"],
-            scrollbar_button_color=C["panel2"],
-        )
-        self.biggest_frame.pack(fill="both", expand=True)
+        self.folders_frame.pack(fill="both", expand=True)
+        self._show_top_folders([])
 
         footer = ctk.CTkFrame(main, fg_color="transparent")
         footer.pack(fill="x", padx=12, pady=(4, 12))
@@ -900,16 +878,12 @@ class DiskCleanerApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Scanning
     # ------------------------------------------------------------------
-    def _scan_roots(self):
-        """Ticked profile folders + added custom folders, de-duplicated."""
-        roots = [profile_folder(n) for n, v in self.folder_vars.items() if v.get()]
-        roots = [r for r in roots if os.path.isdir(r)] + list(self.custom_folders)
-        return list({os.path.normcase(os.path.normpath(r)): r for r in roots}.values())
-
     def _start_scan(self):
         if self.scanning or self.cleaning:
             return
-        roots = self._scan_roots()
+        roots = [profile_folder(n) for n, v in self.folder_vars.items() if v.get()]
+        roots = [r for r in roots if os.path.isdir(r)] + list(self.custom_folders)
+        roots = list({os.path.normcase(os.path.normpath(r)): r for r in roots}.values())
         if not roots and not self.caches_var.get():
             messagebox.showinfo("Nothing to scan", "Tick at least one folder first.")
             return
@@ -960,6 +934,7 @@ class DiskCleanerApp(ctk.CTk):
             cancel_event=self.cancel_event,
         )
         want_hogs = self.hogs_var.get()
+        self._scan_roots = list(roots) + list(temp_dirs)
 
         def worker():
             # Quick counting pass first, so the bar can show a real
@@ -974,9 +949,28 @@ class DiskCleanerApp(ctk.CTk):
                 cancel_event=self.cancel_event,
             )
             self.ui_queue.put(("scan_total", total))
+            # Biggest-folders breakdown runs in parallel with the scan:
+            # a separate read-only walk over the same roots, so it adds
+            # no wall-clock time to the scan itself.
+            folders_result = {}
+
+            def folders_worker():
+                folders_result["items"] = core.top_folders(
+                    roots=roots,
+                    temp_dirs=temp_dirs,
+                    include_system=include_system,
+                    extra_protected=protected,
+                    cancel_event=self.cancel_event,
+                )
+
+            folders_thread = threading.Thread(target=folders_worker, daemon=True)
+            folders_thread.start()
             found = core.scan(**args)
             hogs = core.system_hogs(self.cancel_event) if want_hogs else []
-            self.ui_queue.put(("scan_done", found, hogs))
+            folders_thread.join()
+            self.ui_queue.put(
+                ("scan_done", found, hogs, folders_result.get("items", []))
+            )
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -984,7 +978,7 @@ class DiskCleanerApp(ctk.CTk):
         self.cancel_event.set()
         self.status.configure(text="Cancelling...")
 
-    def _scan_done(self, found, hogs):
+    def _scan_done(self, found, hogs, folders=None):
         self.scanning = False
         self._scan_total = 0
         self.scan_btn.configure(state="normal")
@@ -998,6 +992,7 @@ class DiskCleanerApp(ctk.CTk):
         self.checked_paths = {f.path for f in found if f.pre_checked}
         self._populate_tree()
         self._show_hogs(hogs)
+        self._show_top_folders(folders or [])
         total_size = sum(f.size for f in found)
         self.status.configure(
             text=(
@@ -1198,6 +1193,7 @@ class DiskCleanerApp(ctk.CTk):
         self.filter_var.set("")
         self._populate_tree()
         self._show_hogs([])
+        self._show_top_folders([])
         self.progress.set(0)
         self.status.configure(text="Cleared. Pick folders, then press Scan.")
 
@@ -1262,6 +1258,72 @@ class DiskCleanerApp(ctk.CTk):
                     command=lambda h=hog: self._hog_action(h),
                 ).pack(anchor="e")
 
+    # ------------------------------------------------------------------
+    # Biggest folders tab
+    # ------------------------------------------------------------------
+    def _show_top_folders(self, items):
+        """One row per top-level folder with a bar sized against the
+        largest folder. Read-only: it only shows where the space is,
+        so nothing here can be deleted from this tab - clean from the
+        Files tab instead. The Open button opens the folder itself."""
+        self.top_folders = list(items)
+        for child in self.folders_frame.winfo_children():
+            child.destroy()
+        ctk.CTkLabel(
+            self.folders_frame,
+            text="The largest folders inside the folders you scanned. Sizes "
+            "count every file in each folder, not just the junk the scan "
+            "found - use it to see where your space goes, then clean from "
+            "the Files tab.",
+            text_color=C["muted"], wraplength=780, justify="left",
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=10, pady=(10, 6))
+        if not items:
+            ctk.CTkLabel(
+                self.folders_frame,
+                text="No folders scanned yet. Press Scan to see the biggest "
+                "folders here.",
+                text_color=C["muted"], font=ctk.CTkFont(size=13),
+            ).pack(anchor="w", padx=10, pady=8)
+            return
+        biggest = items[0][1] if items[0][1] > 0 else 1
+        for path, size, count in items:
+            # A bucket that IS a scan root holds the files sitting
+            # directly in that folder, not a subfolder of it.
+            label = path
+            if path in self._scan_roots:
+                label = f"{path}  (files directly in this folder)"
+            card = ctk.CTkFrame(
+                self.folders_frame, fg_color=C["panel"], corner_radius=10
+            )
+            card.pack(fill="x", padx=8, pady=5)
+            body = ctk.CTkFrame(card, fg_color="transparent")
+            body.pack(side="left", fill="both", expand=True, padx=(12, 4), pady=10)
+            head = ctk.CTkFrame(body, fg_color="transparent")
+            head.pack(fill="x")
+            ctk.CTkLabel(
+                head, text=label, font=ctk.CTkFont(size=13, weight="bold"),
+                wraplength=560, justify="left",
+            ).pack(side="left")
+            ctk.CTkLabel(
+                head, text=core.human_size(size), text_color=C["accent"],
+                font=ctk.CTkFont(size=13, weight="bold"),
+            ).pack(side="right")
+            ctk.CTkLabel(
+                body, text=f"{count} file{'s' if count != 1 else ''}",
+                text_color=C["muted"], font=ctk.CTkFont(size=12),
+            ).pack(anchor="w", pady=(2, 6))
+            bar = ctk.CTkProgressBar(
+                body, height=8, corner_radius=4, progress_color=C["accent"]
+            )
+            bar.pack(fill="x")
+            bar.set(size / biggest if biggest else 0)
+            ctk.CTkButton(
+                card, text="Open", width=64, height=30, corner_radius=8,
+                fg_color=C["panel2"], hover_color=C["border"],
+                command=lambda p=path: self._open_folder(p),
+            ).pack(side="right", padx=(0, 12))
+
     def _hog_action(self, hog):
         try:
             if hog.action_kind == "settings":
@@ -1289,88 +1351,6 @@ class DiskCleanerApp(ctk.CTk):
                     self._update_drive_label()
         except (OSError, AttributeError) as exc:
             messagebox.showerror("Could not open", str(exc))
-
-    # ------------------------------------------------------------------
-    # Biggest folders (report only - measuring, never deleting)
-    # ------------------------------------------------------------------
-    def _find_biggest_folders(self):
-        if self.scanning or self.cleaning or self.biggest_running:
-            return
-        roots = self._scan_roots()
-        if not roots:
-            messagebox.showinfo("Nothing to scan", "Tick at least one folder first.")
-            return
-        self.biggest_running = True
-        self.biggest_btn.configure(state="disabled")
-        self.biggest_status.configure(text="Measuring folders...")
-        protected = own_folders()
-        include_system = self.full_var.get()
-
-        def worker():
-            entries = core.top_folders(
-                roots, limit=10, include_system=include_system,
-                extra_protected=protected)
-            self.ui_queue.put(("biggest_done", entries))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _show_biggest(self, entries):
-        self.biggest_running = False
-        self.biggest_entries = entries
-        self.biggest_btn.configure(state="normal")
-        for child in self.biggest_frame.winfo_children():
-            child.destroy()
-        if not entries:
-            self.biggest_status.configure(
-                text="No subfolders with files found in the selected folders."
-            )
-            return
-        total = sum(e.size for e in entries)
-        top = entries[0].size
-        self.biggest_status.configure(
-            text=f"Top {len(entries)} folders by size - "
-            f"{core.human_size(total)} in total. "
-            "Sizes are measured only; nothing is deleted from here."
-        )
-        for entry in entries:
-            card = ctk.CTkFrame(
-                self.biggest_frame, fg_color=C["panel"], corner_radius=10
-            )
-            card.pack(fill="x", padx=8, pady=5)
-            head = ctk.CTkFrame(card, fg_color="transparent")
-            head.pack(fill="x", padx=12, pady=(10, 0))
-            ctk.CTkLabel(
-                head, text=entry.path,
-                font=ctk.CTkFont(size=13, weight="bold"),
-            ).pack(side="left")
-            ctk.CTkLabel(
-                head, text=core.human_size(entry.size), text_color=C["accent"],
-                font=ctk.CTkFont(size=13, weight="bold"),
-            ).pack(side="right")
-            sub = ctk.CTkFrame(card, fg_color="transparent")
-            sub.pack(fill="x", padx=12, pady=(2, 10))
-            bar = ctk.CTkProgressBar(
-                sub, height=8, corner_radius=4, progress_color=C["accent"]
-            )
-            bar.pack(side="left", fill="x", expand=True, pady=2)
-            bar.set(entry.size / top if top else 0)
-            ctk.CTkLabel(
-                sub, text=f"{entry.file_count} files", text_color=C["muted"],
-                font=ctk.CTkFont(size=11),
-            ).pack(side="left", padx=(10, 0))
-            ctk.CTkButton(
-                sub, text="Open", width=64, height=26, corner_radius=8,
-                fg_color=C["panel2"], hover_color=C["border"],
-                command=lambda p=entry.path: self._open_directory(p),
-            ).pack(side="right", padx=(10, 0))
-
-    @staticmethod
-    def _open_directory(path):
-        """Open a folder itself in Explorer (Windows only)."""
-        try:
-            os.startfile(path)
-        except (OSError, AttributeError):
-            pass
 
     # ------------------------------------------------------------------
     # Cleaning
