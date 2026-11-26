@@ -37,3 +37,12 @@
    A session with no fan sensor shows a dash, never a guess,
    and the fan reading never triggers an extra probe, so
    polling costs nothing extra.
+7. **Verdict follows your warning line** — DONE (v1.4.2, Nov 25,
+   2026). The repaste verdict judged the median peak against
+   fixed 95/98°C thresholds while the CPU warning line is
+   changeable in Settings, so a lowered line still read
+   "healthy" next to a live UI flagging the same peaks. The
+   verdict now judges the median peak against the current
+   warning line ("hot" at the line, "repaste" 3°C past it),
+   with 95°C kept as the default, and the verdict card shows
+   the line it judged against.
