@@ -32,7 +32,7 @@ except Exception:  # tray is an enhancement, never a requirement
     pystray = None
     TRAY_AVAILABLE = False
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_PATH = "heatwatch"
 UPDATE_FILES = ("heatwatch_app.py", "heatwatch_core.py", "build.bat",
@@ -997,7 +997,8 @@ class HeatWatchApp(ctk.CTk):
                     text_color=TEXT,
                     command=lambda r=record: self._show_session_graph(r)
                     ).pack(side="right", padx=4)
-        result = core.verdict(self.history)
+        result = core.verdict(self.history,
+                              warn_cpu=self.settings["warn_cpu_c"])
         title, color, detail = VERDICT_TEXT[result["level"]]
         self.verdict_title.configure(text=title, text_color=color)
         self.verdict_card.configure(
@@ -1007,7 +1008,8 @@ class HeatWatchApp(ctk.CTk):
         if result["median_peak_cpu"] is not None:
             extra = (f" Median peak CPU over the last "
                      f"{result['sessions_used']} full sessions: "
-                     f"{fmt_temp(result['median_peak_cpu'])}.")
+                     f"{fmt_temp(result['median_peak_cpu'])} "
+                     f"(warning line {result['warn_cpu']:.0f}°C).")
         self.verdict_detail.configure(text=detail + extra)
         self._refresh_idle_label()
 
