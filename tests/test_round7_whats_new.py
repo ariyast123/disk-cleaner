@@ -156,7 +156,7 @@ def test_update_downloaded_saves_note():
                 with open(os.path.join(HERE, "..", name), "rb") as fh:
                     files[name] = fh.read()
             app.update_info = {
-                "version": "1.2.7",
+                "version": "1.2.8",
                 "notes": "banner line",
                 "patch_notes": "Hook line one.\nHook line two.",
             }
@@ -164,7 +164,7 @@ def test_update_downloaded_saves_note():
             assert os.path.exists(NOTE_PATH)
             with open(NOTE_PATH, encoding="utf-8") as fh:
                 saved = json.load(fh)
-            assert saved["version"] == "1.2.7"
+            assert saved["version"] == "1.2.8"
             assert saved["notes"] == "Hook line one.\nHook line two."
             # the files really landed in the project folder
             assert os.path.exists(
@@ -197,8 +197,8 @@ def test_update_downloaded_saves_note():
 
 
 def test_version():
-    assert gui.VERSION == "1.2.7"
-    print("PASS app version is 1.2.7")
+    assert gui.VERSION == "1.2.8"
+    print("PASS app version is 1.2.8")
 
 
 def main():
