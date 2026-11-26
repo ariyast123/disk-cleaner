@@ -46,3 +46,12 @@
    warning line ("hot" at the line, "repaste" 3°C past it),
    with 95°C kept as the default, and the verdict card shows
    the line it judged against.
+8. **Impossible sensor readings dropped** — DONE (v1.4.3, Nov 25,
+   2026). LHM sometimes publishes 255 °C / -55 °C for a missing
+   probe, or a fan RPM in the hundreds of thousands, and
+   HeatWatch took it at face value — one dead probe could fake
+   a 255 °C peak and push the verdict to "repaste". Temps
+   outside -40…130 °C and fan speeds outside 0…100,000 RPM
+   are now dropped at the parse step in all three readers, so
+   they read as "no reading" and the fallback sources still
+   get their chance; a stopped fan at 0 RPM is kept.
