@@ -383,19 +383,33 @@ def default_gateway():
     return None
 
 
-def ping_host(host, timeout_ms=700):
-    """One ICMP echo to a LAN host; True/False, None when ping cannot run."""
+def ping_host(host, timeout_ms=700, attempts=2):
+    """One ICMP echo to a LAN host; True/False, None when ping cannot run.
+
+    A single dropped echo is common (home routers rate-limit ICMP, a
+    Wi-Fi hiccup), and one lost packet used to flip the app to
+    "blocked" for a whole poll tick — a false kill-switch warning and
+    a spurious blocked_midway event. So a no-reply is retried once
+    before it counts as unreachable. An echo that answers on the
+    first try costs nothing extra; the retry only runs on the failure
+    path, inside the background watcher thread. When ping cannot run
+    at all the answer stays None (unknown), never a guess, and is
+    not retried — retrying a missing binary would prove nothing."""
     if not host:
         return None
-    try:
-        result = subprocess.run(
-            ["ping", "-n", "1", "-w", str(timeout_ms), host],
-            capture_output=True, text=True, timeout=10,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return None
+    attempts = max(1, int(attempts))
+    for _ in range(attempts):
+        try:
+            result = subprocess.run(
+                ["ping", "-n", "1", "-w", str(timeout_ms), host],
+                capture_output=True, text=True, timeout=10,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode == 0:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
