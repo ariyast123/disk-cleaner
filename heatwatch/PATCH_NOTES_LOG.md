@@ -153,3 +153,16 @@ pass.
   the repaste verdict was missing. New test round 22 covers
   the web/WMI fan parsing, the merge rules, the per-session
   range and the range formatting; all 22 rounds pass.
+
+## 2026-11-25 — v1.4.2
+
+- The repaste verdict judged the median peak of recent full
+  sessions against fixed 95/98°C thresholds, even though the
+  CPU warning line is changeable in Settings — so a lowered
+  line still read "healthy" while the live UI flagged the
+  same peaks as over the line. The verdict now judges the
+  median peak against the current warning line ("hot" at the
+  line, "repaste" 3°C past it), with 95°C kept as the
+  default, and the verdict card shows the line it judged
+  against. New test in round 6 covers the line-following
+  boundaries; all 21 rounds pass.
