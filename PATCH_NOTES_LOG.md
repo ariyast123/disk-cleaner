@@ -103,3 +103,19 @@ the weekly digest job reads the last 7 days and posts them in chat
 - The tab is read-only and has an Open button per folder; nothing is
   deleted from it. The breakdown runs in parallel with the scan, so
   the scan itself takes no longer.
+
+## 2026-11-25 — v1.2.9
+
+- Your window size, scan folders, thresholds and toggles are now
+  remembered between runs, saved in ~/DiskCleaner/settings.json and
+  restored on the next launch. Settings are saved when a scan starts
+  and when the app closes, so a crash or a self-update does not lose
+  them. A missing or damaged settings file falls back to the defaults
+  instead of crashing or opening a weird window.
+- Fixed: the Biggest folders tab's Open button opened the folder's
+  parent instead of the folder itself; it now opens the folder.
+- Repaired the test suite: the tests shipped with v1.2.8 still
+  expected the older button-driven biggest-folders design and failed
+  against the published app. They now test the scan-integrated design
+  v1.2.8 actually shipped, and cover the Open-button fix and the new
+  settings persistence. Full suite green.
