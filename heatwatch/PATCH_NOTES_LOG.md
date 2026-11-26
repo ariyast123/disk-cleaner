@@ -166,3 +166,20 @@ pass.
   default, and the verdict card shows the line it judged
   against. New test in round 6 covers the line-following
   boundaries; all 21 rounds pass.
+
+## 2026-11-25 — v1.4.3
+
+- LibreHardwareMonitor sometimes publishes a physically
+  impossible value for a missing probe — 255 °C or -55 °C
+  where no sensor exists, or a fan RPM in the hundreds of
+  thousands — and HeatWatch used to take it at face value, so
+  one dead probe could fake a 255 °C peak and push the
+  repaste verdict to "repaste". Temperatures outside
+  -40…130 °C and fan speeds outside 0…100,000 RPM are now
+  dropped at the parse step in all three readers (web feed,
+  WMI, nvidia-smi), so they read as "no reading" instead: a
+  dropped value never becomes a peak, a warning, or a verdict
+  input, and the fallback sources still get their chance to
+  fill the gap. A stopped fan at 0 RPM is real and is kept.
+  New test round 23 covers the dropped values, the bounds,
+  and the fallback; all 23 rounds pass.
