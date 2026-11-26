@@ -82,12 +82,30 @@ confirmation, no admin requirement, UI text in English.
    overlap; files directly in a root are shown as a row for that
    root). The tab is read-only - nothing can be deleted from it. The
    breakdown runs in a parallel thread during the scan, so the scan
-   itself takes no longer. Covered by new test round 9 (core
-   aggregation, skip-list in both modes, overlap dedup, protected
-   dirs, cancel, GUI render + bars + Open button, end-to-end scan,
-   Clear scan); full suite green.
-7. **Remember settings + window size** between runs (small JSON in
-   ~/DiskCleaner), including scan locations and thresholds.
+   itself takes no longer. (Correction, Nov 25, 2026, v1.2.9: no
+   round 9 test file was ever published, and the tests shipped with
+   v1.2.8 still expected the older button-driven design, so they
+   failed against the published app. The phone instance repaired
+   them in v1.2.9: round 4 section 15 and round 5 section 13 now
+   test the scan-integrated design as shipped - core aggregation,
+   temp dirs, overlap dedup, protected dirs, cancel, GUI render +
+   bars + Open button, end-to-end scan, Clear scan. Full suite
+   green. The Open button also had a real bug: it opened the
+   folder's parent, not the folder itself - fixed in v1.2.9 via a
+   new `_open_directory()`.)
+7. **Remember settings + window size — DONE (Nov 25, 2026, v1.2.9).**
+   Window size, scan locations (profile ticks + custom folders),
+   thresholds (large MB, old days, installer days) and the four
+   include toggles are saved to ~/DiskCleaner/settings.json when a
+   scan starts and when the app closes, and restored on next launch
+   (`load_settings()` / `save_settings()` / `sanitize_settings()`
+   in disk_cleaner_app.py). A missing or corrupt file, or a value of
+   the wrong type or outside its sane range, falls back to that
+   setting's default - window size is clamped to 1020x640..3840x2160,
+   custom folders that no longer exist are dropped. Covered by new
+   tests in round 5 (section 14: save/load round-trip, corrupt and
+   bad values, GUI apply/collect, scan-start save, close save);
+   full suite green.
 8. **Export a scan report** (txt/html) he can keep or share.
 9. **Scheduled quick scan** — optional weekly reminder inside the app
    when caches pass a size threshold (e.g. NVIDIA DXCache > 5 GB).
