@@ -96,7 +96,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.8"
+VERSION = "1.2.9"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -243,6 +243,115 @@ def show_whats_new_dialog(parent, version, notes):
     return win
 
 
+# ----------------------------------------------------------------------
+# Remembered settings (v1.2.9): window size, scan locations and
+# thresholds are saved to ~/DiskCleaner/settings.json when the app
+# closes - and when a scan starts, so a crash or the self-update
+# helper's taskkill does not lose them - and restored on next launch.
+# A missing or corrupt file, or a value of the wrong type or outside
+# its sane range, falls back to the default for that setting: never a
+# crash, never a weird window.
+# ----------------------------------------------------------------------
+PROFILE_FOLDERS = ("Downloads", "Desktop", "Documents", "Pictures",
+                   "Music", "Videos")
+DEFAULT_FOLDERS = {"Downloads": True, "Desktop": False, "Documents": True,
+                   "Pictures": False, "Music": False, "Videos": True}
+
+
+def settings_path():
+    return os.path.join(os.path.expanduser("~"), "DiskCleaner",
+                        "settings.json")
+
+
+def default_settings():
+    return {
+        "window": {"width": 1240, "height": 800},
+        "folders": dict(DEFAULT_FOLDERS),
+        "custom_folders": [],
+        "large_mb": 500,
+        "old_days": 180,
+        "installer_days": 30,
+        "caches": True,
+        "duplicates": False,
+        "hogs": True,
+        "full_scan": False,
+    }
+
+
+def _settings_int(value, default, low, high):
+    """An int setting clamped to [low, high]; anything unparseable
+    (including bools) falls back to the default."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return default
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(num, low), high)
+
+
+def sanitize_settings(data):
+    """Validate a loaded settings dict: unknown keys are dropped and
+    any bad value falls back to its default."""
+    sane = default_settings()
+    if not isinstance(data, dict):
+        return sane
+    window = data.get("window")
+    if isinstance(window, dict):
+        sane["window"] = {
+            "width": _settings_int(window.get("width"), 1240, 1020, 3840),
+            "height": _settings_int(window.get("height"), 800, 640, 2160),
+        }
+    folders = data.get("folders")
+    if isinstance(folders, dict):
+        for name in PROFILE_FOLDERS:
+            if isinstance(folders.get(name), bool):
+                sane["folders"][name] = folders[name]
+    custom = data.get("custom_folders")
+    if isinstance(custom, list):
+        seen = set()
+        for item in custom:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            folder = os.path.normpath(item.strip())
+            key = os.path.normcase(folder)
+            if key in seen or not os.path.isdir(folder):
+                continue
+            seen.add(key)
+            sane["custom_folders"].append(folder)
+    sane["large_mb"] = _settings_int(data.get("large_mb"), 500, 1, 100000)
+    sane["old_days"] = _settings_int(data.get("old_days"), 180, 1, 3650)
+    sane["installer_days"] = _settings_int(
+        data.get("installer_days"), 30, 0, 3650)
+    for key in ("caches", "duplicates", "hogs", "full_scan"):
+        if isinstance(data.get(key), bool):
+            sane[key] = data[key]
+    return sane
+
+
+def load_settings(path=None):
+    """Return the saved settings, or the defaults when there is no
+    valid saved file (missing, bad JSON, wrong shape). Never raises."""
+    try:
+        with open(path or settings_path(), encoding="utf-8") as fh:
+            return sanitize_settings(json.load(fh))
+    except (OSError, ValueError):
+        return default_settings()
+
+
+def save_settings(settings, path=None):
+    """Save settings (sanitized first). Never raises: a failed save
+    just means the settings are not kept."""
+    try:
+        target = path or settings_path()
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            json.dump(sanitize_settings(settings), fh)
+        return True
+    except OSError:
+        return False
+
+
 def project_folder():
     """The folder holding the .py sources and build.bat: when the exe
     sits in dist, that is the folder above it."""
@@ -323,9 +432,12 @@ class DiskCleanerApp(ctk.CTk):
         self._filter_after = None
         self.update_info = None
         self._whats_new_window = None
+        self.settings = load_settings()
 
         self._build_sidebar()
         self._build_main()
+        self._apply_settings(self.settings)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._update_drive_label()
         self.after(100, self._poll_queue)
         self.after(500, self._maybe_show_whats_new)
@@ -716,6 +828,66 @@ class DiskCleanerApp(ctk.CTk):
             return default
 
     # ------------------------------------------------------------------
+    # Remembered settings (v1.2.9)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _set_entry(entry, value):
+        entry.delete(0, "end")
+        entry.insert(0, str(value))
+
+    def _collect_settings(self):
+        """The current sidebar state + window size, as a settings dict."""
+        try:
+            width, height = self.winfo_width(), self.winfo_height()
+        except tk.TclError:
+            width, height = 1240, 800
+        return {
+            "window": {"width": width, "height": height},
+            "folders": {name: var.get()
+                        for name, var in self.folder_vars.items()},
+            "custom_folders": list(self.custom_folders),
+            "large_mb": self._int_setting(self.large_mb, 500),
+            "old_days": self._int_setting(self.old_days, 180),
+            "installer_days": self._int_setting(self.installer_days, 30),
+            "caches": self.caches_var.get(),
+            "duplicates": self.dup_var.get(),
+            "hogs": self.hogs_var.get(),
+            "full_scan": self.full_var.get(),
+        }
+
+    def _apply_settings(self, settings):
+        """Set every sidebar widget (and the window size) from a
+        settings dict. Used at startup and covered by tests; anything
+        missing or invalid falls back to its default."""
+        sane = sanitize_settings(settings)
+        self.settings = sane
+        for name, var in self.folder_vars.items():
+            var.set(sane["folders"].get(name, DEFAULT_FOLDERS[name]))
+        self._set_entry(self.large_mb, sane["large_mb"])
+        self._set_entry(self.old_days, sane["old_days"])
+        self._set_entry(self.installer_days, sane["installer_days"])
+        self.caches_var.set(sane["caches"])
+        self.dup_var.set(sane["duplicates"])
+        self.hogs_var.set(sane["hogs"])
+        self.full_var.set(sane["full_scan"])
+        self.custom_folders = list(sane["custom_folders"])
+        self._refresh_custom_folders()
+        self.geometry(f"{sane['window']['width']}x{sane['window']['height']}")
+
+    def _save_current_settings(self):
+        """Persist the current state. Never raises."""
+        try:
+            save_settings(self._collect_settings())
+        except Exception:
+            pass
+
+    def _on_close(self):
+        """Save settings, then close. A taskkill (e.g. the self-update
+        helper) cannot run this, which is why a scan start saves too."""
+        self._save_current_settings()
+        self.destroy()
+
+    # ------------------------------------------------------------------
     # Main area
     # ------------------------------------------------------------------
     def _build_main(self):
@@ -901,6 +1073,9 @@ class DiskCleanerApp(ctk.CTk):
         ):
             return
 
+        # A scan start saves the settings too, so a crash or the
+        # self-update helper's taskkill does not lose the latest tweaks.
+        self._save_current_settings()
         self.cancel_event.clear()
         self.scanning = True
         self.scan_btn.configure(state="disabled")
@@ -1175,6 +1350,19 @@ class DiskCleanerApp(ctk.CTk):
             pass
 
     @staticmethod
+    def _open_directory(path):
+        """Open a folder itself in Explorer.
+
+        _open_folder() opens the folder CONTAINING its argument, which
+        is right for a file but wrong for a folder: the Biggest folders
+        tab's Open button used it, so it opened the parent folder.
+        """
+        try:
+            os.startfile(path)  # Windows only
+        except (OSError, AttributeError):
+            pass
+
+    @staticmethod
     def _reveal_in_explorer(path):
         """Open Explorer with this exact file selected/highlighted."""
         try:
@@ -1321,7 +1509,7 @@ class DiskCleanerApp(ctk.CTk):
             ctk.CTkButton(
                 card, text="Open", width=64, height=30, corner_radius=8,
                 fg_color=C["panel2"], hover_color=C["border"],
-                command=lambda p=path: self._open_folder(p),
+                command=lambda p=path: self._open_directory(p),
             ).pack(side="right", padx=(0, 12))
 
     def _hog_action(self, hog):
