@@ -385,26 +385,29 @@ def count_files(roots, temp_dirs=(), cache_targets=(), include_system=False,
     return total
 
 
-@dataclass
-class FolderSize:
-    path: str
-    size: int  # total bytes of the files inside, all levels deep
-    file_count: int
+def _top_bucket(path, root):
+    """Immediate child of `root` containing `path`; the root itself
+    when the file sits directly in it."""
+    rel = os.path.relpath(path, root)
+    first = rel.split(os.sep)[0]
+    if first in (".", "..") or os.sep not in rel:
+        return root
+    return os.path.join(root, first)
 
 
-def top_folders(roots, limit=10, include_system=False, extra_protected=(),
-                cancel_event=None):
-    """Rank the biggest immediate subfolders of the given roots.
+def top_folders(roots, temp_dirs=(), limit=10, include_system=False,
+                extra_protected=(), cancel_event=None):
+    """Biggest folders inside the scanned roots.
 
-    Report-only: this only measures sizes, it never lists files for
-    deletion and never deletes anything. One walk per root, with the
-    same directory skip-list and protected-area pruning the scanner
-    uses, so a protected or skipped folder never contributes its
-    size, and per-file protection is applied too (e.g. files under a
-    "Package Cache" folder anywhere). Files sitting directly in a
-    root belong to no subfolder and are left out. Returns the
-    largest `limit` entries, biggest first; folders with no files
-    are not reported.
+    Walks the same roots scan() walks (scan roots plus temp dirs) with
+    the same directory skip-list and protected-area pruning, and adds
+    up every file's size into the bucket of its immediate parent
+    folder under the root - so each scan root contributes one row per
+    top-level folder, plus one row for files sitting directly in the
+    root. Files are counted once even when roots overlap. Returns a
+    list of (path, total_bytes, file_count), biggest first, at most
+    `limit` entries. This only *measures* - nothing here is ever a
+    deletion candidate, and the same never-delete protection applies.
     """
     skip_names = FULL_SCAN_SKIP_DIR_NAMES if include_system else SKIP_DIR_NAMES
     prot_prefixes, prot_root = _protected_areas()
@@ -412,49 +415,31 @@ def top_folders(roots, limit=10, include_system=False, extra_protected=(),
         prot_prefixes = prot_prefixes + [
             os.path.normcase(os.path.abspath(p)) for p in extra_protected
         ]
-    protected = frozenset(os.path.abspath(d).lower() for d in prot_prefixes)
-
-    totals = {}  # normcase(top folder) -> [size, file_count, display path]
-    for root in roots:
+    walk_roots = list(roots) + [t for t in temp_dirs if t not in roots]
+    totals = {}
+    seen = set()
+    for root in walk_roots:
         if cancel_event is not None and cancel_event.is_set():
             break
-        if not root or not os.path.isdir(root):
-            continue
-        root_abs = os.path.abspath(root)
-        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-            if cancel_event is not None and cancel_event.is_set():
-                break
-            dirnames[:] = [
-                d
-                for d in dirnames
-                if d.lower() not in skip_names
-                and not os.path.islink(os.path.join(dirpath, d))
-                and os.path.abspath(os.path.join(dirpath, d)).lower()
-                not in protected
-            ]
-            if os.path.abspath(dirpath) == root_abs:
-                continue  # files directly in the root belong to no subfolder
-            first = os.path.relpath(dirpath, root_abs).split(os.sep)[0]
-            top = os.path.join(root_abs, first)
-            entry = totals.setdefault(os.path.normcase(top), [0, 0, top])
-            for name in filenames:
-                full = os.path.join(dirpath, name)
-                if os.path.islink(full):
-                    continue
-                if _is_protected(full, prot_prefixes, prot_root):
-                    continue
-                try:
-                    size = os.path.getsize(full)
-                except OSError:
-                    continue
-                entry[0] += size
-                entry[1] += 1
+        root = os.path.normpath(root)
+        for fpath, size, _mtime in _iter_files(
+                [root], cancel_event, skip_names, prot_prefixes):
+            if _is_protected(fpath, prot_prefixes, prot_root):
+                continue
+            key = os.path.normcase(fpath)
+            if key in seen:
+                continue
+            seen.add(key)
+            bucket = _top_bucket(fpath, root)
+            entry = totals.setdefault(bucket, [0, 0])
+            entry[0] += size
+            entry[1] += 1
     ranked = sorted(
-        (e for e in totals.values() if e[1] > 0),
-        key=lambda e: e[0], reverse=True,
+        ((path, size, count) for path, (size, count) in totals.items()),
+        key=lambda item: item[1],
+        reverse=True,
     )
-    return [FolderSize(path=e[2], size=e[0], file_count=e[1])
-            for e in ranked[:limit]]
+    return ranked[:limit] if limit and limit > 0 else ranked
 
 
 def _raw_folder_size(path):
