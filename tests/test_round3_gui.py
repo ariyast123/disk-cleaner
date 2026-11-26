@@ -13,6 +13,15 @@ import disk_cleaner_app as gui
 # protection itself is covered at core level in round 4, section 13.)
 gui.own_folders = lambda: [os.path.join(HERE, "fake_app_home")]
 
+# Settings are saved on scan start and on close: keep them in the temp
+# dir so the tests never touch the real ~/DiskCleaner/settings.json.
+import tempfile
+_TEST_SETTINGS = os.path.join(tempfile.gettempdir(),
+                              "disk_cleaner_test_settings.json")
+if os.path.exists(_TEST_SETTINGS):
+    os.remove(_TEST_SETTINGS)
+gui.settings_path = lambda: _TEST_SETTINGS
+
 # Rebuild the shared fixtures first (round 1's script creates them), so
 # this round passes regardless of the order the suite runs in - this
 # round deletes one fixture file while testing the clean bookkeeping.
