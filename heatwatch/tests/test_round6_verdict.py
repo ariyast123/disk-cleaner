@@ -48,6 +48,19 @@ def test_verdict_levels():
     print("PASS verdict: unknown / healthy / hot / repaste boundaries")
 
 
+def test_verdict_follows_warning_line():
+    # The default line is 95: a 93 median stays healthy.
+    assert core.verdict([record(93)])["level"] == "healthy"
+    # Lower the line to 90 and the same peaks are judged harder:
+    # at the line is hot, 3 past it is repaste.
+    assert core.verdict([record(93)], warn_cpu=90)["level"] == "repaste"
+    assert core.verdict([record(91)], warn_cpu=90)["level"] == "hot"
+    assert core.verdict([record(90)], warn_cpu=90)["level"] == "hot"
+    assert core.verdict([record(89)], warn_cpu=90)["level"] == "healthy"
+    assert core.verdict([record(93)], warn_cpu=90)["warn_cpu"] == 90
+    print("PASS verdict follows the user's CPU warning line")
+
+
 def test_verdict_window():
     history = [record(100)] * 5 + [record(80)] * 5
     result = core.verdict(history)
@@ -59,6 +72,7 @@ def main():
     test_append_and_load()
     test_corrupt_history()
     test_verdict_levels()
+    test_verdict_follows_warning_line()
     test_verdict_window()
     print("ROUND 6 ALL PASS")
 
