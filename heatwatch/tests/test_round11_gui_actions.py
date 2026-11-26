@@ -56,11 +56,15 @@ def main():
         print("PASS game toggle flips and persists")
 
         app.history = [{"game": "Rust", "start": 0, "duration_s": 1800,
-                        "peak_cpu": 99.0, "peak_gpu": 80.0,
+                        "peak_cpu": 100.0, "peak_gpu": 80.0,
                         "sec_above_cpu": 60.0}] * 3
         app._refresh_history()
         assert "Repaste is due" in app.verdict_title.cget("text"), \
             app.verdict_title.cget("text")
+        # The verdict judges against the line just set (97°C):
+        # 100 is 3 past it, so repaste — and the card says so.
+        assert "97°C" in app.verdict_detail.cget("text"), \
+            app.verdict_detail.cget("text")
         print("PASS verdict card shows repaste-due on hot history")
 
         record = {"game": "Rust", "start": 1700000000,
