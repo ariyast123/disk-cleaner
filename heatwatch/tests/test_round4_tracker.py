@@ -60,7 +60,7 @@ def test_no_temps_still_a_session():
     tracker.update(0, ["Rust"], None, None, "none")
     tracker.update(5, ["Rust"], None, None, "none")
     current = tracker.current()
-    assert current["peak_cpu"] is None and current["samples"] == 1
+    assert current["peak_cpu"] is None and current["samples"] == 2
     print("PASS sessions survive a missing temperature source")
 
 
