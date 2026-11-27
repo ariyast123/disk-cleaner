@@ -183,3 +183,15 @@ pass.
   fill the gap. A stopped fan at 0 RPM is real and is kept.
   New test round 23 covers the dropped values, the bounds,
   and the fallback; all 23 rounds pass.
+
+## 2026-11-26 — v1.4.4
+
+- A session used to begin on the tick a game was first seen,
+  but that tick's temperatures, fan reading and source were
+  dropped — so a hot start never showed up in the peak, the
+  fan range or the graph, and the session's sample count
+  started one short. The starting tick is now recorded as the
+  session's first sample, with its over-line clock at zero
+  (the idle gap before the game started is not session time).
+  New test round 24 covers the start tick's peak, series,
+  fan range and over-line clock; all 24 rounds pass.
