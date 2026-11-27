@@ -106,7 +106,23 @@ confirmation, no admin requirement, UI text in English.
    tests in round 5 (section 14: save/load round-trip, corrupt and
    bad values, GUI apply/collect, scan-start save, close save);
    full suite green.
-8. **Export a scan report** (txt/html) he can keep or share.
+8. **Export a scan report — DONE (Nov 26, 2026, v1.2.10).** A new
+   "Export report" button in the footer saves the last scan as a
+   text or HTML report he can keep or share: summary with totals per
+   category, the files by category (path, size, modified date, note),
+   the biggest folders and the system space hogs, with the date,
+   version and scanned folders at the top. The HTML report is
+   self-contained (inline CSS, no external resources) and escapes
+   every path, so odd or Persian filenames cannot break it. The
+   report is read-only - exporting only writes the chosen file and
+   never touches the listed files - and the button is enabled only
+   when a finished scan has results. Covered by new tests in round 4
+   (section 16: renderers, escaping, format dispatch, empty scan)
+   and round 5 (section 15: button state, save dialog, cancel, empty
+   scan); full suite green. (Dead-side cover: the baton had named web
+   since the Nov 25 phone publish of v1.2.9 with no new version, so
+   the phone instance covered this turn and flipped the baton back
+   to phone.)
 9. **Scheduled quick scan** — optional weekly reminder inside the app
    when caches pass a size threshold (e.g. NVIDIA DXCache > 5 GB).
 
