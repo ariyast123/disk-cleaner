@@ -653,6 +653,10 @@ class SessionTracker:
             "sources": set(),
         }
         self._gone_since = None
+        # The tick that starts the session is its first sample,
+        # so its over-line clock starts at zero, not at the gap
+        # since the previous idle poll.
+        self._last_ts = ts
 
     def _finish(self, ts):
         record = dict(self.session)
@@ -684,6 +688,11 @@ class SessionTracker:
         and peak so the fan range is visible next to the
         temperatures. A tick without a fan reading leaves the
         range untouched — it never resets it or fills it in.
+
+        The tick that starts a session is recorded as its
+        first sample (peak, series, fan range, source) — it
+        used to be dropped, so a hot start tick never showed
+        up in the peak or the graph.
         """
         events = []
         games = list(running_games or [])
@@ -691,8 +700,9 @@ class SessionTracker:
             if games:
                 self._start(ts, sorted(games)[0])
                 events.append(("started", self.session["game"]))
-            self._last_ts = ts
-            return events
+            else:
+                self._last_ts = ts
+                return events
         dt = 0.0
         if self._last_ts is not None:
             dt = max(0.0, min(30.0, ts - self._last_ts))
