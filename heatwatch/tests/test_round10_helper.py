@@ -44,9 +44,9 @@ def test_helper_launch_has_a_console():
     print("PASS helper launches with its own console window")
 
 
-def test_version_is_1_4_3():
-    assert gui.VERSION == "1.4.3"
-    print("PASS app version is 1.4.3")
+def test_version_is_1_4_4():
+    assert gui.VERSION == "1.4.4"
+    print("PASS app version is 1.4.4")
 
 
 def test_startup_command():
@@ -65,7 +65,7 @@ def test_startup_command():
 def main():
     test_helper_lines()
     test_helper_launch_has_a_console()
-    test_version_is_1_4_3()
+    test_version_is_1_4_4()
     test_startup_command()
     print("ROUND 10 ALL PASS")
 
