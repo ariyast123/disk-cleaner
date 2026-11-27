@@ -119,3 +119,12 @@ the weekly digest job reads the last 7 days and posts them in chat
   against the published app. They now test the scan-integrated design
   v1.2.8 actually shipped, and cover the Open-button fix and the new
   settings persistence. Full suite green.
+
+## 2026-11-26 — v1.2.10
+
+- You can now export the last scan as a report: an Export report
+  button in the footer saves it as text or HTML, with the files by
+  category, the biggest folders and the system space hogs, so you can
+  keep it or share it.
+- The report is read-only — exporting never touches the files it
+  lists. The button is only enabled when a scan has results.
