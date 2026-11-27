@@ -519,4 +519,102 @@ names2 = [os.path.basename(p) for p, _s, _c in top2]
 if names2[1] != "real_target" or "link_dir" in names2:
     fails.append(f"top_folders: symlink must not be followed/counted: {names2}")
 
+# --- 16) scan report export: txt + html, escaping, dispatch -------------
+REP = f"{BASE}/report"
+os.makedirs(REP, exist_ok=True)
+rep_files = [
+    core.FoundFile(f"{REP}/temp junk/cache.tmp", 1500, NOW - 2 * DAY,
+                   core.CAT_TEMP, "Browser cache", True),
+    core.FoundFile(f"{REP}/old setup/setup.exe", 5 * 1024 * 1024,
+                   NOW - 90 * DAY, core.CAT_INSTALLER, "", False),
+    core.FoundFile(f"{REP}/a&b <weird>.txt", 2048, NOW - 400 * DAY,
+                   core.CAT_OLD, "", False),
+    core.FoundFile(f"{REP}/ویدیو.mp4", 3 * 1024 * 1024, NOW - 5 * DAY,
+                   core.CAT_LARGE, "", False),
+]
+rep_hogs = [
+    core.HogInfo("Windows.old", "C:\\Windows.old", 12 * 1024 ** 3,
+                 "Previous Windows install.", "Open Storage settings",
+                 "settings"),
+    core.HogInfo("Delivery Optimization cache", "", -1,
+                 "Update pieces.", "Open Storage settings", "settings"),
+]
+rep_folders = [(f"{REP}/games", 9 * 1024 * 1024, 4),
+               (f"{REP}/photos", 2 * 1024 * 1024, 2)]
+STAMP = "2026-11-26 19:55"
+txt = core.render_scan_report_txt(
+    rep_files, rep_folders, rep_hogs, roots=[REP],
+    generated_at=STAMP, app_version="1.2.10")
+if "Disk Cleaner - scan report" not in txt or STAMP not in txt:
+    fails.append("report txt: missing header or timestamp")
+if "1.2.10" not in txt or REP not in txt:
+    fails.append("report txt: missing version or scanned root")
+if "4 candidate files" not in txt or "8.0 MB" not in txt:
+    fails.append(f"report txt: wrong summary line: {[l for l in txt.splitlines() if 'Summary' in l]}")
+# Categories are ordered by total size, biggest first.
+order = ["Old installer", "Large file", "Unused (old)", "Temp junk"]
+positions = [txt.index(c) for c in order if c in txt]
+if len(positions) != 4 or positions != sorted(positions):
+    fails.append(f"report txt: categories not ordered by size: {positions}")
+for name in ("cache.tmp", "setup.exe", "a&b <weird>.txt", "ویدیو.mp4"):
+    if name not in txt:
+        fails.append(f"report txt: missing file {name}")
+if "Windows.old" not in txt or "size varies" not in txt:
+    fails.append("report txt: missing hogs or the size-varies wording")
+if "games" not in txt or "photos" not in txt:
+    fails.append("report txt: missing biggest-folders rows")
+if "Nothing was deleted" not in txt:
+    fails.append("report txt: missing the no-deletion note")
+html = core.render_scan_report_html(
+    rep_files, rep_folders, rep_hogs, roots=[REP],
+    generated_at=STAMP, app_version="1.2.10")
+if "<!DOCTYPE html>" not in html or 'charset="utf-8"' not in html:
+    fails.append("report html: missing doctype or charset")
+if "a&amp;b &lt;weird&gt;.txt" not in html or "<weird>" in html:
+    fails.append("report html: odd filename not escaped")
+if "ویدیو.mp4" not in html or "size varies" not in html:
+    fails.append("report html: missing unicode filename or hogs")
+if "Nothing was deleted" not in html:
+    fails.append("report html: missing the no-deletion note")
+# Empty scan still renders a valid report in both formats.
+txt0 = core.render_scan_report_txt([], (), (), generated_at=STAMP)
+if "No candidate files found." not in txt0 or "0 candidate files" not in txt0:
+    fails.append("report txt: empty scan should say so")
+if "No candidate files found." not in core.render_scan_report_html(
+        [], (), (), generated_at=STAMP):
+    fails.append("report html: empty scan should say so")
+# write_scan_report picks the format from the extension.
+txt_path = f"{BASE}/report/out.txt"
+if core.write_scan_report(rep_files, rep_folders, rep_hogs, txt_path,
+                          roots=[REP], app_version="1.2.10") != txt_path:
+    fails.append("report write: should return the path written")
+with open(txt_path, encoding="utf-8") as fh:
+    back = fh.read()
+if "<!DOCTYPE html>" in back or "cache.tmp" not in back:
+    fails.append("report write: .txt should hold the text report")
+html_path = f"{BASE}/report/out.html"
+core.write_scan_report(rep_files, rep_folders, rep_hogs, html_path,
+                       roots=[REP], app_version="1.2.10")
+with open(html_path, encoding="utf-8") as fh:
+    if "<!DOCTYPE html>" not in fh.read():
+        fails.append("report write: .html should hold the HTML report")
+htm_path = f"{BASE}/report/out.HTM"
+core.write_scan_report(rep_files, rep_folders, rep_hogs, htm_path,
+                       roots=[REP], app_version="1.2.10")
+with open(htm_path, encoding="utf-8") as fh:
+    if "<!DOCTYPE html>" not in fh.read():
+        fails.append("report write: .HTM should hold the HTML report")
+md_path = f"{BASE}/report/out.md"
+core.write_scan_report(rep_files, rep_folders, rep_hogs, md_path,
+                       roots=[REP], app_version="1.2.10")
+with open(md_path, encoding="utf-8") as fh:
+    if "<!DOCTYPE html>" in fh.read():
+        fails.append("report write: unknown extension should fall back to text")
+try:
+    core.write_scan_report(rep_files, rep_folders, rep_hogs,
+                           f"{BASE}/no_such_dir/out.txt")
+    fails.append("report write: unwritable path should raise OSError")
+except OSError:
+    pass
+
 print("RESULT:", "FAIL -> " + "; ".join(fails) if fails else "ALL PASS")
