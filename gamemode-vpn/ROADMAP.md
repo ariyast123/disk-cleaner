@@ -64,3 +64,13 @@ worst bug this app can ship.
    event). A gateway that answers first try is still pinged
    exactly once; a ping that cannot run stays "unknown" and is
    not retried. Covered by test round 26.
+9. **Lowest-metric gateway — DONE in v1.4.4.** `default_gateway`
+   now picks the lowest-metric gateway from the Active Routes
+   section of `route print` instead of the first 0.0.0.0 row, so
+   on a machine with several default routes (Ethernet + Wi-Fi,
+   or a VPN's own default route) the bare-vs-blocked verdict is
+   decided against the gateway actually carrying traffic.
+   Persistent routes never count, ties keep the first row, a
+   row with an unreadable metric only wins when alone, and
+   output with no recognisable headers (localised Windows)
+   falls back to scanning every row. Covered by test round 27.
