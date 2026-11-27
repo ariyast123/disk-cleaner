@@ -26,8 +26,9 @@ def test_series_recorded():
     run_session(tracker, [(0, 60, 50), (3, 70, 55), (6, 80, 60),
                           (9, 97, 70)])
     current = tracker.current()
-    assert current["series"] == [[3.0, 70, 55], [6.0, 80, 60],
-                                 [9.0, 97, 70]], current["series"]
+    assert current["series"] == [[0.0, 60, 50], [3.0, 70, 55],
+                                 [6.0, 80, 60], [9.0, 97, 70]], \
+        current["series"]
     print("PASS series keeps [elapsed, cpu, gpu] per tick")
 
 
@@ -35,7 +36,8 @@ def test_series_none_is_a_gap():
     tracker = make()
     run_session(tracker, [(0, 60, 50), (3, None, 55), (6, 80, None)])
     current = tracker.current()
-    assert current["series"] == [[3.0, None, 55], [6.0, 80, None]]
+    assert current["series"] == [[0.0, 60, 50], [3.0, None, 55],
+                                 [6.0, 80, None]]
     print("PASS a missing reading stays None in the series, not a guess")
 
 
@@ -47,10 +49,11 @@ def test_series_in_finished_record():
     events = tracker.update(30, [], 80, 60, "LHM web")
     assert events and events[0][0] == "ended"
     record = events[0][1]
-    # the two debounce ticks are still session ticks, so they are
+    # the debounce ticks are still session ticks, so they are
     # in the series too, up to the moment the session ends
-    assert record["series"] == [[3.0, 70, 55], [6.0, 80, 60],
-                                [20.0, 80, 60], [30.0, 80, 60]], \
+    assert record["series"] == [[0.0, 60, 50], [3.0, 70, 55],
+                                [6.0, 80, 60], [20.0, 80, 60],
+                                [30.0, 80, 60]], \
         record["series"]
     json.dumps(record)  # must survive the history file round trip
     print("PASS finished records carry a JSON-safe series")
@@ -64,7 +67,7 @@ def test_series_thinning():
     series = tracker.current()["series"]
     assert len(series) <= core.SessionTracker.MAX_SERIES_POINTS, \
         len(series)
-    assert series[0][0] == 3.0, series[0]
+    assert series[0][0] == 0.0, series[0]
     assert series[-1][0] >= 5900, series[-1]
     elapsed = [point[0] for point in series]
     assert elapsed == sorted(elapsed) and len(set(elapsed)) == len(elapsed)
