@@ -673,6 +673,87 @@ else:
     if saved["large_mb"] != 777 or saved["custom_folders"] != [BIG]:
         fails.append(f"settings: scan start should save settings: {saved}")
 
+# --- 15) Export scan report: txt + html, cancel, empty, button state ---
+EXP = os.path.join(BASE, "export")
+os.makedirs(EXP, exist_ok=True)
+exp_files = [
+    core.FoundFile(os.path.join(EXP, "cache.tmp"), 1500,
+                   time.time() - 2 * 86400, core.CAT_TEMP,
+                   "Browser cache", True),
+    core.FoundFile(os.path.join(EXP, "big.bin"), 3 * 1024 * 1024,
+                   time.time() - 5 * 86400, core.CAT_LARGE, "", False),
+]
+exp_hogs = [core.HogInfo("Windows.old", "C:\\Windows.old", 12 * 1024 ** 3,
+                         "Previous Windows install.", "", "none")]
+exp_folders = [(EXP, 3 * 1024 * 1024 + 1500, 2)]
+app._scan_done(exp_files, exp_hogs, exp_folders)
+app.update()
+if str(app.export_btn.cget("state")) != "normal":
+    fails.append("export: button should be enabled after a scan with results")
+if app.hogs != exp_hogs:
+    fails.append("export: _scan_done should keep the hogs for the report")
+# Stub the save dialog: txt first.
+real_asksave = gui.filedialog.asksaveasfilename
+txt_path = os.path.join(EXP, "report.txt")
+gui.filedialog.asksaveasfilename = lambda **kw: txt_path
+try:
+    app._export_report()
+finally:
+    gui.filedialog.asksaveasfilename = real_asksave
+if not os.path.exists(txt_path):
+    fails.append("export: txt report not written")
+else:
+    with open(txt_path, encoding="utf-8") as fh:
+        content = fh.read()
+    if "cache.tmp" not in content or "big.bin" not in content:
+        fails.append("export: txt report missing file paths")
+    if "Windows.old" not in content or gui.VERSION not in content:
+        fails.append("export: txt report missing hogs/version")
+    if "Nothing was deleted" not in content:
+        fails.append("export: txt report missing the no-deletion note")
+if not app.status.cget("text").startswith("Report saved:"):
+    fails.append(f"export: status should confirm the save: {app.status.cget('text')}")
+# HTML path.
+html_path = os.path.join(EXP, "report.html")
+gui.filedialog.asksaveasfilename = lambda **kw: html_path
+try:
+    app._export_report()
+finally:
+    gui.filedialog.asksaveasfilename = real_asksave
+if not os.path.exists(html_path):
+    fails.append("export: html report not written")
+else:
+    with open(html_path, encoding="utf-8") as fh:
+        if "<!DOCTYPE html>" not in fh.read():
+            fails.append("export: html report is not HTML")
+# Cancelled dialog writes nothing and leaves the status alone.
+gui.filedialog.asksaveasfilename = lambda **kw: ""
+try:
+    before = app.status.cget("text")
+    app._export_report()
+finally:
+    gui.filedialog.asksaveasfilename = real_asksave
+if app.status.cget("text") != before:
+    fails.append("export: cancelled dialog should not change the status")
+if os.path.exists(os.path.join(EXP, "report2.txt")):
+    fails.append("export: cancelled dialog should not write a file")
+# Empty results: info dialog, no file, button disabled.
+infos = []
+real_info = gui.messagebox.showinfo
+gui.messagebox.showinfo = lambda *a, **k: infos.append(a)
+try:
+    app._clear_scan()
+    app.update()
+    if str(app.export_btn.cget("state")) != "disabled":
+        fails.append("export: button should be disabled after Clear scan")
+    if app.hogs != []:
+        fails.append("export: Clear scan should drop the hogs too")
+    app._export_report()
+finally:
+    gui.messagebox.showinfo = real_info
+if not infos or "Nothing to export" not in infos[0][0]:
+    fails.append(f"export: empty results should show the info dialog: {infos}")
+
 # Closing saves too - this is the last thing: _on_close destroys the app.
 app.old_days.delete(0, "end")
 app.old_days.insert(0, "42")
