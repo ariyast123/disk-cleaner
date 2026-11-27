@@ -365,7 +365,21 @@ def interface_states():
 
 
 def default_gateway():
-    """Default IPv4 gateway from `route print`, or None."""
+    """Default IPv4 gateway from `route print`, or None.
+
+    When several default routes exist (Ethernet + Wi-Fi both up, or
+    a VPN's own default route), Windows forwards through the
+    lowest-metric one — so the first 0.0.0.0 row in the output is
+    not necessarily the gateway carrying traffic, and pinging the
+    wrong one decides "bare" vs "blocked" against a gateway that
+    is not in the path. Only rows in the Active Routes section
+    count, and the lowest metric wins; ties keep the first row,
+    which is the old behaviour on the common single-route machine.
+    A row whose metric will not parse counts as +infinity, so it
+    only wins when it is the only candidate. When the output has
+    no recognisable section headers (e.g. a localised Windows),
+    every row is considered, exactly like before — the headers
+    only narrow the search when they are actually seen."""
     try:
         out = subprocess.run(
             ["route", "print", "-4"],
@@ -374,13 +388,33 @@ def default_gateway():
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return None
+    best = None  # (metric, gateway)
+    in_active = False
+    saw_active = False
     for line in out.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Active Routes:"):
+            in_active, saw_active = True, True
+            continue
+        if stripped.startswith("Persistent Routes:"):
+            in_active = False
+            continue
+        if saw_active and not in_active:
+            continue
         fields = line.split()
         if len(fields) >= 3 and fields[0] == "0.0.0.0" and fields[1] == "0.0.0.0":
             gateway = fields[2]
-            if gateway.count(".") == 3:
-                return gateway
-    return None
+            if gateway.count(".") != 3:
+                continue
+            metric = float("inf")
+            if len(fields) >= 5:
+                try:
+                    metric = int(fields[4])
+                except ValueError:
+                    pass
+            if best is None or metric < best[0]:
+                best = (metric, gateway)
+    return best[1] if best is not None else None
 
 
 def ping_host(host, timeout_ms=700, attempts=2):
