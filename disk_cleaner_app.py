@@ -96,7 +96,7 @@ def own_folders():
 # Ariya's repo exists; while it is empty the mechanism is fully off
 # (no network calls at all).
 # ----------------------------------------------------------------------
-VERSION = "1.2.9"
+VERSION = "1.2.10"
 UPDATE_REPO = "ariyast123/disk-cleaner"
 UPDATE_FILES = ("disk_cleaner_app.py", "cleaner_core.py", "build.bat")
 
@@ -424,6 +424,7 @@ class DiskCleanerApp(ctk.CTk):
         self._scan_total = 0  # file count from the pre-scan counting pass (0 = unknown)
         self.results = []            # list[core.FoundFile] from the last scan
         self.top_folders = []        # list[(path, size, count)] from the last scan
+        self.hogs = []               # list[core.HogInfo] from the last scan
         self._scan_roots = []        # roots (+ temp dirs) the last scan walked
         self.file_iids = {}          # tree iid -> FoundFile (current view)
         self.checked_paths = set()   # paths the user has ticked
@@ -1032,6 +1033,16 @@ class DiskCleanerApp(ctk.CTk):
             footer, text="Selected: nothing", font=ctk.CTkFont(size=13)
         )
         self.selected_label.pack(side="left")
+        self.export_btn = ctk.CTkButton(
+            footer,
+            text="Export report",
+            height=40, corner_radius=10,
+            font=ctk.CTkFont(size=14),
+            fg_color=C["panel2"], hover_color=C["border"],
+            command=self._export_report,
+            state="disabled",
+        )
+        self.export_btn.pack(side="right", padx=(0, 10))
         self.clean_btn = ctk.CTkButton(
             footer,
             text="Move selected to Recycle Bin",
@@ -1081,6 +1092,7 @@ class DiskCleanerApp(ctk.CTk):
         self.scan_btn.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
         self.clean_btn.configure(state="disabled")
+        self._refresh_export_btn()
         self.progress.configure(mode="indeterminate")
         self.progress.start()
         self.status.configure(text="Scanning...")
@@ -1164,10 +1176,12 @@ class DiskCleanerApp(ctk.CTk):
         cancelled = self.cancel_event.is_set()
         self.progress.set(0 if cancelled else 1)
         self.results = found
+        self.hogs = list(hogs)
         self.checked_paths = {f.path for f in found if f.pre_checked}
         self._populate_tree()
         self._show_hogs(hogs)
         self._show_top_folders(folders or [])
+        self._refresh_export_btn()
         total_size = sum(f.size for f in found)
         self.status.configure(
             text=(
@@ -1377,11 +1391,13 @@ class DiskCleanerApp(ctk.CTk):
         if self.scanning or self.cleaning:
             return
         self.results = []
+        self.hogs = []
         self.checked_paths = set()
         self.filter_var.set("")
         self._populate_tree()
         self._show_hogs([])
         self._show_top_folders([])
+        self._refresh_export_btn()
         self.progress.set(0)
         self.status.configure(text="Cleared. Pick folders, then press Scan.")
 
@@ -1396,6 +1412,55 @@ class DiskCleanerApp(ctk.CTk):
     def _select_none(self):
         self.checked_paths = set()
         self._populate_tree()
+
+    # ------------------------------------------------------------------
+    # Scan report export
+    # ------------------------------------------------------------------
+    def _refresh_export_btn(self):
+        """Export is only offered when a finished scan has results:
+        nothing to report while scanning or cleaning, or after Clear."""
+        self.export_btn.configure(
+            state="normal"
+            if self.results and not self.scanning and not self.cleaning
+            else "disabled"
+        )
+
+    def _export_report(self):
+        """Save the last scan as a .txt or .html report to keep or share.
+
+        Read-only: it only writes the report file the user chose, and
+        never touches the scanned files themselves."""
+        if not self.results:
+            messagebox.showinfo(
+                "Nothing to export",
+                "Run a scan first - there are no results to export yet.",
+            )
+            return
+        default_name = (
+            "disk-cleaner-report-"
+            + datetime.now().strftime("%Y-%m-%d") + ".txt"
+        )
+        path = filedialog.asksaveasfilename(
+            title="Export scan report",
+            defaultextension=".txt",
+            initialfile=default_name,
+            filetypes=[
+                ("Text report", "*.txt"),
+                ("HTML report", "*.html"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        try:
+            core.write_scan_report(
+                self.results, self.top_folders, self.hogs, path,
+                roots=self._scan_roots, app_version=VERSION,
+            )
+        except OSError as exc:
+            messagebox.showerror("Could not save report", str(exc))
+            return
+        self.status.configure(text=f"Report saved: {path}")
 
     # ------------------------------------------------------------------
     # System hogs tab
@@ -1562,6 +1627,7 @@ class DiskCleanerApp(ctk.CTk):
         self.clean_btn.configure(state="disabled")
         self.scan_btn.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
+        self._refresh_export_btn()
         self.progress.configure(mode="indeterminate")
         self.progress.start()
         self.status.configure(text=f"Cleaning... 0 of {len(targets)} files processed")
@@ -1611,6 +1677,7 @@ class DiskCleanerApp(ctk.CTk):
         self.clean_btn.configure(state="normal" if SEND2TRASH_OK else "disabled")
         self.scan_btn.configure(state="normal")
         self.cancel_btn.configure(state="disabled")
+        self._refresh_export_btn()
         # Drop files that are actually gone; keep the rest listed - and
         # keep their ticks, so a stopped clean can simply be resumed.
         gone = {f.path for f in targets if not os.path.exists(f.path)}
