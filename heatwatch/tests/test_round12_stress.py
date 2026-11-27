@@ -18,7 +18,7 @@ def test_tracker_stress():
     elapsed = time.time() - started
     assert elapsed < 1.0, f"10k ticks took {elapsed:.2f}s"
     current = tracker.current()
-    assert current["samples"] == 9999, current["samples"]
+    assert current["samples"] == 10000, current["samples"]
     assert current["peak_cpu"] == 101
     print(f"PASS 10k tracker ticks in {elapsed:.2f}s, peaks exact")
 
