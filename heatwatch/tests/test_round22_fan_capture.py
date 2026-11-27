@@ -57,21 +57,20 @@ def test_fan_only_web_still_fetches_temps():
 def test_tracker_fan_range():
     tracker = core.SessionTracker(warn_cpu=95, warn_gpu=85,
                                   debounce_seconds=10.0)
-    # The starting tick's readings are dropped like the temps
-    # are (the session only starts on that tick), so the 1500
-    # RPM here never enters the range.
+    # The starting tick is the session's first sample, so its
+    # 1500 RPM enters the range as the low end.
     tracker.update(0, ["Rust"], 70, 55, "LHM web", fan=1500.0)
     tracker.update(3, ["Rust"], 80, 60, "LHM web", fan=2400.0)
     tracker.update(6, ["Rust"], 85, 62, "LHM web", fan=None)
     tracker.update(9, ["Rust"], 88, 64, "LHM web", fan=2100.0)
     current = tracker.current()
-    assert current["fan_low"] == 2100.0, current
+    assert current["fan_low"] == 1500.0, current
     assert current["fan_peak"] == 2400.0, current
     tracker.update(10, [], 80, 60, "LHM web", fan=2000.0)
     events = tracker.update(20, [], 80, 60, "LHM web")
     assert len(events) == 1 and events[0][0] == "ended", events
     record = events[0][1]
-    assert record["fan_low"] == 2000 and record["fan_peak"] == 2400, \
+    assert record["fan_low"] == 1500 and record["fan_peak"] == 2400, \
         record
     assert isinstance(record["fan_peak"], int), record
     print("PASS tracker keeps the fan range; None ticks never reset it")
