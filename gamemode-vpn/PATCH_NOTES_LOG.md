@@ -322,3 +322,26 @@ pyflakes clean.
   pass, pyflakes clean. (Also fixed in this release: round 14's
   version pin was still asserting 1.4.1 from the phone side's
   v1.4.2 publish — it now pins the current version.)
+
+## 2026-11-26 — v1.4.4
+
+- Lowest-metric gateway wins (detection robustness): when the PC
+  has several default routes — Ethernet and Wi-Fi both up, or a
+  VPN's own default route — Windows forwards through the
+  lowest-metric one, but `default_gateway` used to return the
+  first 0.0.0.0 row in `route print`, which is not necessarily
+  that gateway. The bare-vs-blocked verdict (and the kill-switch
+  warning) could then be decided against a gateway that is not
+  carrying traffic. It now picks the lowest-metric gateway from
+  the Active Routes section only — persistent routes never count,
+  ties keep the first row, and a row with an unreadable metric
+  only wins when it is the only candidate. On a localised Windows
+  with no recognisable section headers it falls back to scanning
+  every row, exactly like before. On a normal single-route
+  machine nothing changes. Covered by new test round 27
+  (lowest metric wins, single route unchanged, tie keeps first
+  row, persistent route ignored, no route is None, bad metric
+  only wins alone, no-headers fallback, failing route command
+  stays unknown, snapshot pings the lowest-metric gateway).
+  All 27 rounds pass, pyflakes clean. (Also updated in this
+  release: round 14's version pin now asserts 1.4.4.)
