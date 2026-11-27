@@ -16,6 +16,7 @@ Two kinds of results:
 
 import glob
 import hashlib
+import html
 import os
 import re
 import time
@@ -1036,3 +1037,228 @@ def system_hogs(cancel_event=None):
                     )
                 )
     return hogs
+
+# --------------------------------------------------------------------------
+# Scan report export (txt / html): a read-only summary of the last scan
+# that the user can keep or share. Exporting never touches the files
+# listed in the report - it only writes the report file itself.
+# --------------------------------------------------------------------------
+
+def _report_timestamp(generated_at):
+    """Fixed string in tests; the current local time in the app."""
+    if generated_at:
+        return str(generated_at)
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime())
+
+
+def _report_categories(results):
+    """[(category, count, size)] sorted by total size, biggest first."""
+    by_cat = {}
+    for f in results:
+        count, size = by_cat.get(f.category, (0, 0))
+        by_cat[f.category] = (count + 1, size + f.size)
+    return sorted(
+        ((cat, count, size) for cat, (count, size) in by_cat.items()),
+        key=lambda item: item[2],
+        reverse=True,
+    )
+
+
+def _hog_size_text(hog):
+    return human_size(hog.size) if hog.size >= 0 else "size varies"
+
+
+def render_scan_report_txt(results, top_folders=(), hogs=(), roots=(),
+                           generated_at=None, app_version=""):
+    """Plain-text scan report: summary, files by category, biggest
+    folders, system hogs. Paths are written as-is (UTF-8 on write)."""
+    stamp = _report_timestamp(generated_at)
+    version_text = f" (Disk Cleaner {app_version})" if app_version else ""
+    lines = [
+        "Disk Cleaner - scan report",
+        f"Generated: {stamp}{version_text}",
+    ]
+    if roots:
+        lines.append("Scanned: " + ", ".join(roots))
+    total = sum(f.size for f in results)
+    lines.append("")
+    lines.append(
+        f"Summary: {len(results)} candidate file"
+        f"{'s' if len(results) != 1 else ''}, {human_size(total)} total"
+    )
+    for cat, count, size in _report_categories(results):
+        lines.append(
+            f"  {cat}: {count} file{'s' if count != 1 else ''}, "
+            f"{human_size(size)}"
+        )
+    lines.append("")
+    if results:
+        lines.append("Files to clean")
+        by_cat = {}
+        for f in results:
+            by_cat.setdefault(f.category, []).append(f)
+        for cat, _count, size in _report_categories(results):
+            files = sorted(by_cat[cat], key=lambda f: f.size, reverse=True)
+            lines.append(
+                f"  [{cat}] ({len(files)} file"
+                f"{'s' if len(files) != 1 else ''}, {human_size(size)})"
+            )
+            for f in files:
+                modified = time.strftime("%Y-%m-%d", time.localtime(f.mtime))
+                note = f"  {f.note}" if f.note else ""
+                lines.append(
+                    f"    {human_size(f.size):>10}  {f.path}"
+                    f"  (modified {modified}){note}"
+                )
+        lines.append("")
+    else:
+        lines.append("No candidate files found.")
+        lines.append("")
+    if top_folders:
+        lines.append("Biggest folders")
+        for path, size, count in top_folders:
+            lines.append(
+                f"  {human_size(size):>10}  {path}"
+                f"  ({count} file{'s' if count != 1 else ''})"
+            )
+        lines.append("")
+    if hogs:
+        lines.append("System space (measured only - the app never deletes these)")
+        for hog in hogs:
+            where = f" - {hog.path}" if hog.path else ""
+            lines.append(f"  {_hog_size_text(hog)}  {hog.name}{where}")
+            lines.append(f"    {hog.detail}")
+        lines.append("")
+    lines.append(
+        "Note: this report only lists files. "
+        "Nothing was deleted by generating it."
+    )
+    return "\n".join(lines) + "\n"
+
+
+def render_scan_report_html(results, top_folders=(), hogs=(), roots=(),
+                            generated_at=None, app_version=""):
+    """HTML scan report: the same content as the text report, in
+    tables. Self-contained (inline CSS, no external resources) and
+    UTF-8; every path and note is escaped, so odd filenames cannot
+    break the markup."""
+    esc = html.escape
+    stamp = _report_timestamp(generated_at)
+    version_text = (
+        f" (Disk Cleaner {esc(app_version)})" if app_version else ""
+    )
+    total = sum(f.size for f in results)
+    parts = [
+        "<!DOCTYPE html>",
+        "<html lang=\"en\">",
+        "<head>",
+        "<meta charset=\"utf-8\">",
+        "<title>Disk Cleaner - scan report</title>",
+        "<style>"
+        "body{font-family:'Segoe UI',Arial,sans-serif;max-width:900px;"
+        "margin:24px auto;padding:0 16px;color:#222}"
+        "h1{font-size:22px}h2{font-size:17px;margin-top:24px}"
+        "table{border-collapse:collapse;width:100%}"
+        "th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;"
+        "font-size:14px}th{background:#eee}"
+        "td.num{text-align:right;white-space:nowrap}"
+        ".muted{color:#666}</style>",
+        "</head>",
+        "<body>",
+        "<h1>Disk Cleaner - scan report</h1>",
+        f"<p class=\"muted\">Generated: {esc(stamp)}{version_text}</p>",
+    ]
+    if roots:
+        parts.append(
+            "<p class=\"muted\">Scanned: "
+            + esc(", ".join(roots)) + "</p>"
+        )
+    parts.append(
+        f"<p><strong>Summary:</strong> {len(results)} candidate file"
+        f"{'s' if len(results) != 1 else ''}, {esc(human_size(total))} total</p>"
+    )
+    if results:
+        parts.append("<h2>Files to clean</h2>")
+        parts.append(
+            "<table><tr><th>Category</th><th>Files</th>"
+            "<th>Size</th></tr>"
+        )
+        for cat, count, size in _report_categories(results):
+            parts.append(
+                f"<tr><td>{esc(cat)}</td><td class=\"num\">{count}</td>"
+                f"<td class=\"num\">{esc(human_size(size))}</td></tr>"
+            )
+        parts.append("</table>")
+        by_cat = {}
+        for f in results:
+            by_cat.setdefault(f.category, []).append(f)
+        for cat, _count, size in _report_categories(results):
+            files = sorted(by_cat[cat], key=lambda f: f.size, reverse=True)
+            parts.append(f"<h2>{esc(cat)} ({len(files)} files, "
+                         f"{esc(human_size(size))})</h2>")
+            parts.append(
+                "<table><tr><th>Size</th><th>File</th>"
+                "<th>Modified</th><th>Note</th></tr>"
+            )
+            for f in files:
+                modified = time.strftime("%Y-%m-%d", time.localtime(f.mtime))
+                parts.append(
+                    f"<tr><td class=\"num\">{esc(human_size(f.size))}</td>"
+                    f"<td>{esc(f.path)}</td><td>{modified}</td>"
+                    f"<td>{esc(f.note)}</td></tr>"
+                )
+            parts.append("</table>")
+    else:
+        parts.append("<p>No candidate files found.</p>")
+    if top_folders:
+        parts.append("<h2>Biggest folders</h2>")
+        parts.append(
+            "<table><tr><th>Size</th><th>Folder</th><th>Files</th></tr>"
+        )
+        for path, size, count in top_folders:
+            parts.append(
+                f"<tr><td class=\"num\">{esc(human_size(size))}</td>"
+                f"<td>{esc(path)}</td><td class=\"num\">{count}</td></tr>"
+            )
+        parts.append("</table>")
+    if hogs:
+        parts.append("<h2>System space (measured only - the app never "
+                     "deletes these)</h2>")
+        parts.append(
+            "<table><tr><th>Size</th><th>Name</th><th>Detail</th></tr>"
+        )
+        for hog in hogs:
+            where = f" - {esc(hog.path)}" if hog.path else ""
+            parts.append(
+                f"<tr><td class=\"num\">{esc(_hog_size_text(hog))}</td>"
+                f"<td>{esc(hog.name)}{where}</td>"
+                f"<td>{esc(hog.detail)}</td></tr>"
+            )
+        parts.append("</table>")
+    parts.append(
+        "<p class=\"muted\">Note: this report only lists files. "
+        "Nothing was deleted by generating it.</p>"
+    )
+    parts.append("</body>")
+    parts.append("</html>")
+    return "\n".join(parts) + "\n"
+
+
+def write_scan_report(results, top_folders, hogs, path, roots=(),
+                      app_version=""):
+    """Write the report to `path`: .html/.htm gets the HTML report,
+    anything else the plain-text one. Returns the path written.
+    Raises OSError when the file cannot be written - the caller
+    reports that to the user."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".html", ".htm"):
+        text = render_scan_report_html(
+            results, top_folders, hogs, roots=roots, app_version=app_version
+        )
+    else:
+        text = render_scan_report_txt(
+            results, top_folders, hogs, roots=roots, app_version=app_version
+        )
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
