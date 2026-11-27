@@ -55,3 +55,9 @@
    are now dropped at the parse step in all three readers, so
    they read as "no reading" and the fallback sources still
    get their chance; a stopped fan at 0 RPM is kept.
+9. **First tick counted** — DONE (v1.4.4, Nov 26,
+   2026). The tick that started a session was dropped — its
+   temperatures, fan reading and source never reached the
+   peak, the series, the fan range or the sample count, so a
+   hot start never showed up. The start tick is now the
+   session's first sample, with its over-line clock at zero.
